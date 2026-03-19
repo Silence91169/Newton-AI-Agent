@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+playwright
+supabase
+anthropic
+openai
+google-generativeai
+apscheduler
+python-dotenv
+cryptography
+loguru
+pydantic
+httpx
+python-telegram-bot
