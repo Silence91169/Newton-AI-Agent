@@ -1,0 +1,226 @@
+/* Newton AI Agent — Options Page */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --base:     #1e1e2e;
+  --mantle:   #181825;
+  --crust:    #11111b;
+  --surface0: #313244;
+  --surface1: #45475a;
+  --overlay0: #6c7086;
+  --overlay1: #7f849c;
+  --text:     #cdd6f4;
+  --subtext:  #a6adc8;
+  --blue:     #89b4fa;
+  --lavender: #b4befe;
+  --green:    #a6e3a1;
+  --red:      #f38ba8;
+  --yellow:   #f9e2af;
+  --peach:    #fab387;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--base);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+header {
+  background: var(--mantle);
+  border-bottom: 1px solid var(--surface0);
+  padding: 20px 32px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.header-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.logo { width: 36px; height: 36px; border-radius: 8px; }
+h1 { font-size: 18px; font-weight: 700; }
+.subtitle { font-size: 12px; color: var(--overlay1); margin-top: 2px; }
+
+/* ── Main ────────────────────────────────────────────────────────────────── */
+main { padding: 28px 32px; display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--mantle);
+  border: 1px solid var(--surface0);
+  border-radius: 12px;
+  padding: 20px 22px;
+}
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.card-desc {
+  font-size: 12px;
+  color: var(--subtext);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+/* ── Fields ──────────────────────────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 12px; font-weight: 600; color: var(--subtext); }
+
+input[type="text"],
+input[type="password"],
+input[type="url"] {
+  width: 100%;
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  outline: none;
+  transition: border-color .2s;
+}
+input:focus { border-color: var(--blue); }
+input::placeholder { color: var(--overlay0); }
+
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.input-row input { flex: 1; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn-icon {
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  color: var(--subtext);
+  padding: 0 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: border-color .2s, color .2s;
+}
+.btn-icon:hover { border-color: var(--blue); color: var(--blue); }
+
+.btn-primary {
+  background: var(--blue);
+  border: none;
+  border-radius: 8px;
+  color: var(--mantle);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 28px;
+  cursor: pointer;
+  transition: opacity .2s;
+}
+.btn-primary:hover { opacity: .85; }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-secondary {
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: border-color .2s;
+}
+.btn-secondary:hover { border-color: var(--blue); }
+
+.btn-ghost {
+  background: none;
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  color: var(--subtext);
+  font-size: 13px;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+.btn-ghost:hover { border-color: var(--red); color: var(--red); }
+
+/* ── Actions row ─────────────────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ── Test row ────────────────────────────────────────────────────────────── */
+.test-row { display: flex; align-items: center; gap: 16px; }
+.test-result { font-size: 13px; }
+.test-ok    { color: var(--green); }
+.test-error { color: var(--red);   }
+
+/* ── Info card ───────────────────────────────────────────────────────────── */
+.info-card { background: rgba(137,180,250,.06); border-color: rgba(137,180,250,.2); }
+.info-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  counter-reset: steps;
+}
+.info-list li {
+  counter-increment: steps;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  color: var(--subtext);
+  line-height: 1.5;
+}
+.info-list li::before {
+  content: counter(steps);
+  background: var(--surface0);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+  transition: opacity .3s;
+  z-index: 100;
+}
+.toast.hidden { opacity: 0; pointer-events: none; }
+.toast.success { border-color: var(--green); color: var(--green); }
+.toast.error   { border-color: var(--red);   color: var(--red);   }
+
+/* ── Link ────────────────────────────────────────────────────────────────── */
+.link { color: var(--blue); text-decoration: none; }
+.link:hover { text-decoration: underline; }

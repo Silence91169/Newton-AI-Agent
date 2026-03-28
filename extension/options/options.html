@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Newton AI Agent — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="page">
+
+    <header>
+      <div class="header-inner">
+        <img src="../icons/icon48.png" alt="logo" class="logo" />
+        <div>
+          <h1>Newton AI Agent</h1>
+          <p class="subtitle">Extension Settings</p>
+        </div>
+      </div>
+    </header>
+
+    <main>
+
+      <!-- API Token -->
+      <section class="card">
+        <div class="card-title">Backend API Token</div>
+        <p class="card-desc">
+          Your personal token from the Newton AI Agent dashboard.
+          <a href="#" id="link-dashboard" class="link">Get token →</a>
+        </p>
+        <div class="field">
+          <label for="inp-token">API Token</label>
+          <div class="input-row">
+            <input
+              type="password"
+              id="inp-token"
+              placeholder="naa_xxxxxxxxxxxxxxxx"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button class="btn-icon" id="btn-show-token" title="Show/hide">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Backend URL -->
+      <section class="card">
+        <div class="card-title">Backend Server</div>
+        <p class="card-desc">URL of the Newton AI Agent backend API server.</p>
+        <div class="field">
+          <label for="inp-url">Backend URL</label>
+          <input
+            type="url"
+            id="inp-url"
+            placeholder="http://localhost:8000"
+            autocomplete="off"
+          />
+        </div>
+      </section>
+
+      <!-- Connection test -->
+      <section class="card">
+        <div class="card-title">Connection</div>
+        <p class="card-desc">Test that the extension can reach the backend with your token.</p>
+        <div class="test-row">
+          <button class="btn-secondary" id="btn-test">Test Connection</button>
+          <span id="test-result" class="test-result"></span>
+        </div>
+      </section>
+
+      <!-- Info -->
+      <section class="card info-card">
+        <div class="card-title">How it works</div>
+        <ol class="info-list">
+          <li>Register on the dashboard and copy your API token.</li>
+          <li>Paste it above and save.</li>
+          <li>Browse to any Newton School assessment or coding challenge.</li>
+          <li>The agent solves and submits automatically.</li>
+        </ol>
+      </section>
+
+      <!-- Toast / status -->
+      <div id="toast" class="toast hidden"></div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <button class="btn-primary" id="btn-save">Save Settings</button>
+        <button class="btn-ghost" id="btn-reset">Reset to Default</button>
+      </div>
+
+    </main>
+  </div>
+  <script src="../src/options.js"></script>
+</body>
+</html>

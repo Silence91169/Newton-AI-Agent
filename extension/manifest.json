@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Newton AI Agent",
+  "version": "1.0.0",
+  "description": "Automatically solves Newton School assignments, quizzes, and coding challenges",
+  "permissions": [
+    "storage",
+    "alarms",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://my.newtonschool.co/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://my.newtonschool.co/*"],
+      "js": ["src/page_bridge.js", "src/auth_bridge.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://my.newtonschool.co/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Newton AI Agent",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options/options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

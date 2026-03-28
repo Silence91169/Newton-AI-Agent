@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Newton AI Agent</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <header>
+      <div class="header-left">
+        <img src="../icons/icon48.png" alt="logo" class="logo" />
+        <div>
+          <h1>Newton AI Agent</h1>
+          <span id="conn-badge" class="badge badge-checking">Checking…</span>
+        </div>
+      </div>
+      <label class="toggle" title="Enable / Disable">
+        <input type="checkbox" id="toggle-enabled" />
+        <span class="slider"></span>
+      </label>
+    </header>
+
+    <!-- Stats row -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <span class="stat-value" id="stat-today">—</span>
+        <span class="stat-label">Today</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-card">
+        <span class="stat-value" id="stat-status">—</span>
+        <span class="stat-label">Status</span>
+      </div>
+    </div>
+
+    <!-- Last activity -->
+    <div class="section">
+      <div class="section-label">Last Activity</div>
+      <div class="activity-box">
+        <p id="activity-text">No activity yet</p>
+        <p id="activity-time" class="activity-time"></p>
+      </div>
+    </div>
+
+    <!-- Current page -->
+    <div class="section">
+      <div class="section-label">Current Page</div>
+      <div class="page-box" id="page-type">
+        <span class="page-dot" id="page-dot"></span>
+        <span id="page-label">Detecting…</span>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      <button class="btn-ghost" id="btn-options">Settings</button>
+      <span class="version">v1.0.0</span>
+    </footer>
+
+  </div>
+  <script src="../src/popup.js"></script>
+</body>
+</html>

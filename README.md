@@ -14,14 +14,15 @@
 
 Newton AI Agent runs silently in the background and handles everything on your Newton School portal automatically:
 
-| Task Type | What happens |
-|---|---|
-| MCQ Quiz | Detects questions, picks correct option, submits |
-| Coding Contest | Reads problem + constraints, generates solution, submits |
-| Assignment | Reads prompt, writes structured answer, submits |
-| In-class Quiz | Extension catches it the moment it launches — solves in seconds |
+| Task Type | Status | What happens |
+|---|---|---|
+| MCQ Quiz | ✅ Working | Detects questions, picks correct option, submits automatically |
+| Coding Contest | 🔧 In progress | Reads problem + constraints, generates solution, submits |
+| Assignment | Coming soon | Reads prompt, writes structured answer, submits |
+| Jupyter Notebook | Coming soon | Solves notebook cells automatically |
+| Excel / Power BI | Coming soon | Completes data tasks and submissions |
 
-Students bring their own AI key (Claude / GPT-4o / Gemini) — zero cost to run.
+Students bring their own AI key (Groq free / Claude / GPT-4o / Gemini) — zero cost to run.
 
 ---
 
@@ -45,17 +46,16 @@ Students bring their own AI key (Claude / GPT-4o / Gemini) — zero cost to run.
                               │    Backend Server      │
                               │    Python + FastAPI    │
                               │                        │
-                              │  • 60s background poll │
-                              │  • Multi-user manager  │
-                              │  • LLM solver engine   │
-                              │  • Telegram notifier   │
+                              │  • Auth + token mgmt  │
+                              │  • LLM solver engine  │
+                              │  • Task history        │
                               └───────┬───────┬────────┘
                                       │       │
-                           ┌──────────▼─┐  ┌──▼──────────┐
-                           │  Supabase  │  │  Claude API  │
-                           │  Database  │  │  GPT-4o      │
-                           │            │  │  Gemini      │
-                           └────────────┘  └─────────────┘
+                           ┌──────────▼─┐  ┌──▼────────────────┐
+                           │  Supabase  │  │  Groq (free)       │
+                           │  Database  │  │  Claude / GPT-4o   │
+                           │  + RLS     │  │  Gemini            │
+                           └────────────┘  └───────────────────┘
 ```
 
 ---
@@ -67,15 +67,17 @@ newton-ai-agent/
 │
 ├── 📁 extension/                  # Chrome Extension (MV3)
 │   ├── src/
-│   │   ├── background.js          # Service worker — API calls, alarms
-│   │   ├── content.js             # Runs on portal — DOM reading
+│   │   ├── background.js          # Service worker — API calls to backend
+│   │   ├── content.js             # Isolated world — DOM reading + solver logic
+│   │   ├── page_bridge.js         # MAIN world — Monaco editor detection
+│   │   ├── auth_bridge.js         # MAIN world — fetch/XHR auth header capture
 │   │   ├── popup.js               # Popup logic
 │   │   └── options.js             # Settings page logic
 │   ├── popup/
 │   │   ├── popup.html             # Status, toggle, last activity
 │   │   └── popup.css
 │   ├── options/
-│   │   ├── options.html           # API token, schedule config
+│   │   ├── options.html           # API token entry
 │   │   └── options.css
 │   ├── icons/                     # 16x16, 48x48, 128x128
 │   └── manifest.json              # MV3 manifest
@@ -83,16 +85,13 @@ newton-ai-agent/
 ├── 📁 backend/                    # Python + FastAPI Server
 │   ├── app/
 │   │   ├── main.py                # FastAPI app entry point
-│   │   ├── config.py              # Environment variables
+│   │   ├── config.py              # AES encryption + env variables
 │   │   ├── routes/
-│   │   │   ├── auth.py            # Register, login, token verify
+│   │   │   ├── auth.py            # /auth/register, login, verify, update
 │   │   │   ├── solve.py           # POST /solve — LLM solver endpoint
-│   │   │   └── tasks.py           # Task history endpoints
+│   │   │   └── tasks.py           # GET/POST/PATCH/DELETE /tasks
 │   │   ├── services/
-│   │   │   ├── browser.py         # Playwright login + scraping
-│   │   │   ├── solver.py          # Claude / GPT-4o / Gemini solver
-│   │   │   ├── scheduler.py       # APScheduler background polling
-│   │   │   └── notifier.py        # Telegram bot notifications
+│   │   │   └── solver.py          # Provider-agnostic LLM solver
 │   │   ├── db/
 │   │   │   ├── supabase.py        # Supabase client
 │   │   │   └── schema.sql         # Full database schema
@@ -101,7 +100,7 @@ newton-ai-agent/
 │   ├── .env                       # Your real keys (never commit)
 │   └── requirements.txt
 │
-├── 📁 dashboard/                  # React + Vite + TypeScript
+├── 📁 dashboard/                  # React + Vite + TypeScript (scaffolded)
 │   ├── src/
 │   │   ├── pages/
 │   │   │   ├── Register.tsx       # Student registration
@@ -129,17 +128,13 @@ newton-ai-agent/
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| Browser automation | Playwright (Python async) | Login, DOM scraping, form submission |
-| Backend | FastAPI + Python 3.13 | API server, background scheduler |
-| AI Solver | Claude / GPT-4o / Gemini | Solving tasks (user's own key) |
-| Database | Supabase (PostgreSQL) | Users, tasks, runs, sessions |
-| Realtime | Supabase Realtime | Live task updates to dashboard |
-| Scheduler | APScheduler | 60s background polling per student |
-| Frontend | React + Vite + TypeScript | Student dashboard |
-| Styling | Tailwind CSS | UI styling |
-| Notifications | Telegram Bot API | Instant alerts |
-| Security | AES-256 encryption | Credential storage |
+| Extension | Chrome MV3, vanilla JS | DOM detection, form filling, submission |
+| Backend | FastAPI + Python 3.13, Uvicorn | API server, LLM routing, task history |
+| AI Solver | Groq / Claude / GPT-4o / Gemini | Solving tasks (user's own key) |
+| Database | Supabase (PostgreSQL) | Users, tasks, runs, sessions with RLS |
+| Security | AES-256-GCM encryption | Credential and API key storage |
 | Logging | Loguru | Structured backend logs |
+| Frontend | React + Vite + TypeScript + Tailwind | Student dashboard (coming soon) |
 
 ---
 
@@ -147,42 +142,42 @@ newton-ai-agent/
 
 ```
 users         → student accounts + encrypted portal creds + LLM key
-sessions      → playwright browser cookies (auto-refreshed)
-tasks         → every detected task: type, status, score, timestamps
-runs          → every LLM call: prompt, response, success/fail, errors
+sessions      → login session storage
+tasks         → every detected task: type, status, timestamps
+runs          → every LLM call: prompt, response, tokens, success/fail
 user_stats    → computed view: success rate, totals by task type
 ```
 
 ---
 
+## LLM Providers
+
+| Provider | Model | Cost | Recommended |
+|---|---|---|---|
+| Groq | llama-3.3-70b-versatile | Free tier available | ✅ Start here |
+| Anthropic | claude-sonnet-4-6 | Pay-per-token | Great accuracy |
+| OpenAI | gpt-4o | Pay-per-token | Reliable |
+| Google | gemini-2.0-flash | Pay-per-token | Fast |
+
+---
+
 ## Features
 
-### Core
-- **Multi-user** — one backend serves all students simultaneously
-- **Any LLM** — Claude, GPT-4o, or Gemini — student picks and pays for their own
-- **Provider-agnostic solver** — same interface, different SDK under the hood
-- **AES-encrypted credentials** — portal passwords and API keys never stored plain
-
-### Detection
-- **Background poller** — scans all accounts every 60 seconds
-- **In-class watcher** — switches to 5s polling during class hours
-- **MutationObserver** — extension catches live quiz launches in under 1 second
-- **Deduplication** — never re-attempts a completed task
-- **Deadline sorter** — processes soonest-expiring tasks first
+### Working now
+- **MCQ solver** — chain-of-thought reasoning, picks correct option digit, auto-submits
+- **MV3 extension** — manifest, service worker, content scripts, popup, options page
+- **MAIN world bridges** — `page_bridge.js` for Monaco detection, `auth_bridge.js` for auth header capture via CustomEvents (no CSP violations)
+- **FastAPI backend** — register, login, verify, update, solve, task history endpoints
+- **Provider-agnostic solver** — same interface across Groq / Claude / GPT-4o / Gemini
+- **AES-256-GCM encryption** — portal passwords and LLM API keys encrypted at rest
+- **Supabase with RLS** — users only see their own tasks and run logs
+- **Retry with error context** — up to 3 retries; previous error output injected into prompt
 
 ### Solving
-- **MCQ solver** — returns only the correct option letter
-- **Coding solver** — reads problem + constraints + sample I/O, generates optimal solution
-- **Text assignment solver** — respects word limits and format
-- **Response validator** — checks answer before submitting
-- **Retry with error context** — up to 3 retries, error message injected into prompt
-- **Multi-language** — detects required language (Python / C++ / Java) automatically
-
-### Dashboard
-- **Live task feed** — Supabase Realtime push updates
-- **Run log viewer** — see exactly what the LLM answered per task
-- **Per-course toggles** — disable bot for specific subjects
-- **Class schedule config** — set timetable so watcher activates during class
+- **MCQ solver** — returns only the correct option index; validates before clicking
+- **Coding solver** — reads problem + constraints + sample I/O, generates runnable code
+- **Response validator** — strips markdown fences, checks for empty output
+- **Multi-language** — Python, C++, Java, JavaScript detected from editor language
 
 ---
 
@@ -190,23 +185,21 @@ user_stats    → computed view: success rate, totals by task type
 
 ```
 Phase 0  ████████████████████  ✅  Project setup + Supabase schema
-Phase 1  ░░░░░░░░░░░░░░░░░░░░  ⬜  Chrome extension skeleton
-Phase 2  ░░░░░░░░░░░░░░░░░░░░  ⬜  Portal detection (content script)
-Phase 3  ░░░░░░░░░░░░░░░░░░░░  ⬜  Backend server + scheduler
-Phase 4  ░░░░░░░░░░░░░░░░░░░░  ⬜  LLM solver engine
-Phase 5  ░░░░░░░░░░░░░░░░░░░░  ⬜  Submission layer
-Phase 6  ░░░░░░░░░░░░░░░░░░░░  ⬜  React dashboard
-Phase 7  ░░░░░░░░░░░░░░░░░░░░  ⬜  Notifications + deployment
+Phase 1  ████████████████████  ✅  Chrome extension (MV3) — full build
+Phase 2  ████████████░░░░░░░░  🔧  Portal solvers — MCQ done, coding in progress
+Phase 3  ░░░░░░░░░░░░░░░░░░░░  ⬜  React dashboard
+Phase 4  ░░░░░░░░░░░░░░░░░░░░  ⬜  Telegram notifications
+Phase 5  ░░░░░░░░░░░░░░░░░░░░  ⬜  Railway / Vercel deployment
 ```
 
-- [x] **Phase 0** — Monorepo setup, Supabase schema, Python venv, React + Vite init
-- [ ] **Phase 1** — Chrome extension: manifest.json, background.js, content.js, popup UI, options page
-- [ ] **Phase 2** — Portal DOM recon, MutationObserver, task classifier, question extractor, overlay UI
-- [ ] **Phase 3** — FastAPI routes, Playwright session manager, APScheduler background polling
-- [ ] **Phase 4** — Provider-agnostic LLM solver, validators, retry logic, `/solve` endpoint
-- [ ] **Phase 5** — Form fillers per task type, submit handler, error recovery
-- [ ] **Phase 6** — React pages, Supabase Realtime feed, stats cards, run log viewer
-- [ ] **Phase 7** — Telegram bot, daily digest, Railway deploy, Vercel deploy
+- [x] **Phase 0** — Monorepo setup, Supabase schema (users, sessions, tasks, runs, user_stats), Python venv, React + Vite scaffold
+- [x] **Phase 1** — Chrome extension: MV3 manifest, background.js service worker, content.js, page_bridge.js (MAIN world Monaco detection), auth_bridge.js (MAIN world auth capture), popup UI, options page, overlay
+- [x] **Phase 1** — FastAPI backend: `/auth/register`, `/auth/login`, `/auth/verify`, `/auth/update`, `POST /solve`, `/tasks` CRUD; provider-agnostic solver (Groq / Claude / GPT-4o / Gemini); AES-256 key encryption
+- [🔧] **Phase 2** — MCQ solver fully working; coding solver in progress (Monaco editor detection via page_bridge.js, CSP issues resolved)
+- [ ] **Phase 2** — Jupyter Notebook solver, Excel solver, Power BI solver
+- [ ] **Phase 3** — React dashboard: live task feed, run log viewer, stats cards, per-course toggles
+- [ ] **Phase 4** — Telegram bot notifications, daily digest
+- [ ] **Phase 5** — Railway deploy (backend), Vercel deploy (dashboard)
 
 ---
 
@@ -215,7 +208,7 @@ Phase 7  ░░░░░░░░░░░░░░░░░░░░  ⬜  Noti
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
-- Supabase account
+- Supabase account (free tier works)
 - Chrome browser
 
 ### 1. Clone the repo
@@ -230,14 +223,13 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip3 install -r requirements.txt
-playwright install chromium
 ```
 
 Fill in `backend/.env`:
 ```env
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_KEY=your-service-role-key
-AES_SECRET_KEY=your-32-byte-hex-key
+AES_SECRET_KEY=your-64-char-hex-key
 BACKEND_URL=http://localhost:8000
 ```
 
@@ -254,27 +246,57 @@ uvicorn app.main:app --reload
 # http://localhost:8000
 ```
 
-### 3. Dashboard
+### 3. Register a user
 ```bash
-cd dashboard
-npm install
-npm run dev
-# http://localhost:5173
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Your Name",
+    "portal_username": "your@email.com",
+    "portal_password": "your-portal-password",
+    "llm_provider": "groq",
+    "llm_api_key": "gsk_..."
+  }'
 ```
 
-Fill in `dashboard/.env`:
-```env
-VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-publishable-key
-VITE_BACKEND_URL=http://localhost:8000
-```
+Save the `api_token` from the response — you'll need it for the extension.
 
 ### 4. Chrome Extension
 1. Open Chrome → `chrome://extensions`
 2. Enable **Developer mode** (top right toggle)
 3. Click **Load unpacked**
 4. Select the `extension/` folder
-5. Pin the extension and enter your API token from the dashboard
+5. Click the extension icon → open **Settings**
+6. Paste your `api_token` and save
+
+The extension will start detecting and solving MCQ quizzes automatically when you visit `my.newtonschool.co`.
+
+---
+
+## API Reference
+
+### Auth
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/auth/register` | Create account, get API token |
+| `POST` | `/auth/login` | Login with portal credentials |
+| `GET` | `/auth/verify` | Verify Bearer token |
+| `PATCH` | `/auth/update` | Update LLM provider or API key |
+
+### Solve
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/solve` | Send question, get answer |
+
+### Tasks
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/tasks` | List task history |
+| `GET` | `/tasks/stats` | Aggregated stats |
+| `GET` | `/tasks/{id}` | Single task + runs |
+| `POST` | `/tasks` | Create task manually |
+| `PATCH` | `/tasks/{id}` | Update task status |
+| `DELETE` | `/tasks/{id}` | Delete task |
 
 ---
 
@@ -285,9 +307,9 @@ VITE_BACKEND_URL=http://localhost:8000
 |---|---|---|
 | `SUPABASE_URL` | Supabase project URL | ✅ |
 | `SUPABASE_KEY` | Service role (secret) key | ✅ |
-| `AES_SECRET_KEY` | 32-byte hex for encrypting credentials | ✅ |
-| `TELEGRAM_BOT_TOKEN` | For Telegram notifications | Optional |
+| `AES_SECRET_KEY` | 64-char hex for encrypting credentials | ✅ |
 | `BACKEND_URL` | Server URL | ✅ |
+| `TELEGRAM_BOT_TOKEN` | For Telegram notifications | Optional |
 
 ### `dashboard/.env`
 | Variable | Description | Required |
@@ -300,11 +322,12 @@ VITE_BACKEND_URL=http://localhost:8000
 
 ## Security
 
-- Portal passwords and LLM API keys are **AES-256 encrypted** before storing
+- Portal passwords and LLM API keys are **AES-256-GCM encrypted** before storing
 - The `service_role` key is backend-only — never sent to the frontend
 - **Row Level Security (RLS)** — students only see their own data
+- **Bearer token auth** on every extension → backend request
+- **No inline scripts** — CSP-safe MV3 extension using MAIN world content scripts instead of `<script>` injection
 - `.env` files are gitignored and never committed
-- API token auth on every extension → backend request
 
 ---
 
@@ -323,4 +346,3 @@ VITE_BACKEND_URL=http://localhost:8000
 This project was built as a challenge assignment at Newton School of Technology. Use responsibly and in accordance with your institution's academic policies.
 
 ---
-
