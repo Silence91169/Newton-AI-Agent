@@ -16,8 +16,9 @@ Newton AI Agent runs silently in the background and handles everything on your N
 
 | Task Type | Status | What happens |
 |---|---|---|
-| MCQ Quiz | ✅ Working | Detects questions, picks correct option, submits automatically |
-| Coding Contest | 🔧 In progress | Reads problem + constraints, generates solution, submits |
+| MCQ Quiz | ✅ Working | Detects questions, picks correct option, auto-navigates, submits |
+| Live Quiz | ✅ Working | Detects `/lecture/*/live` polls, solves each question, submits |
+| Coding Contest | ✅ Working | Reads problem, generates solution via LLM, fills INPUT, runs, submits |
 | Assignment | Coming soon | Reads prompt, writes structured answer, submits |
 | Jupyter Notebook | Coming soon | Solves notebook cells automatically |
 | Excel / Power BI | Coming soon | Completes data tasks and submissions |
@@ -29,33 +30,61 @@ Students bring their own AI key (Groq free / Claude / GPT-4o / Gemini) — zero 
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Student Browser                       │
-│                                                         │
-│   ┌─────────────────────┐   ┌──────────────────────┐   │
-│   │  Newton School       │   │  Chrome Extension    │   │
-│   │  Portal              │◄──│                      │   │
-│   │  my.newtonschool.co  │   │  • Reads DOM live    │   │
-│   └─────────────────────┘   │  • Detects events    │   │
-│                              │  • Fills + submits   │   │
-│                              │  • Overlay UI        │   │
-│                              └──────────┬───────────┘   │
-└─────────────────────────────────────────│───────────────┘
-                                          │ solve request
-                              ┌───────────▼───────────┐
-                              │    Backend Server      │
-                              │    Python + FastAPI    │
-                              │                        │
-                              │  • Auth + token mgmt  │
-                              │  • LLM solver engine  │
-                              │  • Task history        │
-                              └───────┬───────┬────────┘
-                                      │       │
-                           ┌──────────▼─┐  ┌──▼────────────────┐
-                           │  Supabase  │  │  Groq (free)       │
-                           │  Database  │  │  Claude / GPT-4o   │
-                           │  + RLS     │  │  Gemini            │
-                           └────────────┘  └───────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         Student Browser                          │
+│                                                                  │
+│   ┌─────────────────────┐   ┌──────────────────────────────┐   │
+│   │  Newton School       │   │     Chrome Extension (MV3)   │   │
+│   │  Portal              │◄──│                              │   │
+│   │  my.newtonschool.co  │   │  ┌────────────────────────┐  │   │
+│   └─────────────────────┘   │  │ content.js             │  │   │
+│                              │  │ (isolated world)        │  │   │
+│                              │  │ • DOM reading           │  │   │
+│                              │  │ • Solver orchestration  │  │   │
+│                              │  │ • Overlay UI            │  │   │
+│                              │  └──────────┬─────────────┘  │   │
+│                              │    CustomEvents (both ways)   │   │
+│                              │  ┌──────────▼─────────────┐  │   │
+│                              │  │ page_bridge.js          │  │   │
+│                              │  │ (MAIN world)            │  │   │
+│                              │  │ • Monaco editor access  │  │   │
+│                              │  │ • Read/write code       │  │   │
+│                              │  │ • Read output/errors    │  │   │
+│                              │  └────────────────────────┘  │   │
+│                              │  ┌────────────────────────┐  │   │
+│                              │  │ auth_bridge.js (MAIN)   │  │   │
+│                              │  │ • Captures auth headers │  │   │
+│                              │  └────────────────────────┘  │   │
+│                              └──────────────┬───────────────┘   │
+└─────────────────────────────────────────────│───────────────────┘
+                                              │ solve request
+                                  ┌───────────▼───────────┐
+                                  │    Backend Server      │
+                                  │    Python + FastAPI    │
+                                  │                        │
+                                  │  • Auth + token mgmt  │
+                                  │  • LLM solver engine  │
+                                  │  • Task history        │
+                                  └───────┬───────┬────────┘
+                                          │       │
+                               ┌──────────▼─┐  ┌──▼────────────────┐
+                               │  Supabase  │  │  Groq (free)       │
+                               │  Database  │  │  Claude / GPT-4o   │
+                               │  + RLS     │  │  Gemini            │
+                               └────────────┘  └───────────────────┘
+```
+
+### Monaco Bridge Architecture
+
+Chrome extensions run content scripts in an **isolated world** — they cannot access `window.monaco` or any page JS. All Monaco operations are proxied through `page_bridge.js` (MAIN world) via CustomEvents:
+
+```
+content.js (isolated)          page_bridge.js (MAIN world)
+─────────────────────          ───────────────────────────
+naa_find_editor       ──────►  finds best editor → naa_editor_found
+naa_get_code          ──────►  reads editor value → naa_code_result
+naa_set_code          ──────►  executeEdits() → naa_set_code_result
+naa_get_output        ──────►  reads output/error editors → naa_output_result
 ```
 
 ---
@@ -69,7 +98,7 @@ newton-ai-agent/
 │   ├── src/
 │   │   ├── background.js          # Service worker — API calls to backend
 │   │   ├── content.js             # Isolated world — DOM reading + solver logic
-│   │   ├── page_bridge.js         # MAIN world — Monaco editor detection
+│   │   ├── page_bridge.js         # MAIN world — ALL Monaco editor operations
 │   │   ├── auth_bridge.js         # MAIN world — fetch/XHR auth header capture
 │   │   ├── popup.js               # Popup logic
 │   │   └── options.js             # Settings page logic
@@ -84,7 +113,7 @@ newton-ai-agent/
 │
 ├── 📁 backend/                    # Python + FastAPI Server
 │   ├── app/
-│   │   ├── main.py                # FastAPI app entry point
+│   │   ├── main.py                # FastAPI app — CORS allow_origins=["*"]
 │   │   ├── config.py              # AES encryption + env variables
 │   │   ├── routes/
 │   │   │   ├── auth.py            # /auth/register, login, verify, update
@@ -98,6 +127,7 @@ newton-ai-agent/
 │   │   └── models/
 │   │       └── schemas.py         # Pydantic models
 │   ├── .env                       # Your real keys (never commit)
+│   ├── .env.example               # Template — safe to commit
 │   └── requirements.txt
 │
 ├── 📁 dashboard/                  # React + Vite + TypeScript (scaffolded)
@@ -117,7 +147,6 @@ newton-ai-agent/
 │   │       └── api.ts             # Backend API calls
 │   └── .env
 │
-├── .env.example                   # Template — safe to commit
 ├── .gitignore
 └── README.md
 ```
@@ -155,7 +184,7 @@ user_stats    → computed view: success rate, totals by task type
 | Provider | Model | Cost | Recommended |
 |---|---|---|---|
 | Groq | llama-3.3-70b-versatile | Free tier available | ✅ Start here |
-| Anthropic | claude-sonnet-4-6 | Pay-per-token | Great accuracy |
+| Anthropic | claude-sonnet-4-6 | Pay-per-token | Best accuracy |
 | OpenAI | gpt-4o | Pay-per-token | Reliable |
 | Google | gemini-2.0-flash | Pay-per-token | Fast |
 
@@ -164,20 +193,33 @@ user_stats    → computed view: success rate, totals by task type
 ## Features
 
 ### Working now
-- **MCQ solver** — chain-of-thought reasoning, picks correct option digit, auto-submits
-- **MV3 extension** — manifest, service worker, content scripts, popup, options page
-- **MAIN world bridges** — `page_bridge.js` for Monaco detection, `auth_bridge.js` for auth header capture via CustomEvents (no CSP violations)
+
+- **MCQ solver** — chain-of-thought reasoning, picks correct option digit, auto-navigates questions, submits
+- **Live quiz solver** — detects `/lecture/*/live` URLs, solves poll/quiz modals question by question
+  - Selectors: `sc-f9e3e3ee-4` (question text), `sc-5a2039c7-15` (option text), `sc-67e9c95b-3` (clickable wrapper)
+  - Falls back to text-click if wrapper not found; waits for question change before advancing
+- **Coding solver** — fully working end-to-end with Monaco bridge architecture
+  - `page_bridge.js` handles ALL Monaco operations (MAIN world) — read code, write code, read output
+  - `content.js` fires CustomEvents and listens for results (isolated world)
+  - Extracts problem description from `sc-3ef8580b-6` / `sc-3ef8580b-11` selectors
+  - Detects language from dropdown (`sc-6e1082ef-2` / `cOVIPX` selectors)
+  - Auto-fills the INPUT tab with example input parsed from the problem statement
+  - Retries up to 3 times — each retry includes test results + stderr + stdout as error context
+  - TypeScript-specific LLM rules: no `require()`, no imports, preserve all interfaces
+- **CORS fix** — `allow_origins=["*"]` with `allow_credentials=False` so `chrome-extension://` origins can call the backend
+- **MV3 extension** — manifest, service worker, content scripts, popup, options page, overlay
+- **MAIN world bridges** — `page_bridge.js` for Monaco, `auth_bridge.js` for auth header capture via CustomEvents (no CSP violations)
 - **FastAPI backend** — register, login, verify, update, solve, task history endpoints
 - **Provider-agnostic solver** — same interface across Groq / Claude / GPT-4o / Gemini
 - **AES-256-GCM encryption** — portal passwords and LLM API keys encrypted at rest
 - **Supabase with RLS** — users only see their own tasks and run logs
-- **Retry with error context** — up to 3 retries; previous error output injected into prompt
 
-### Solving
-- **MCQ solver** — returns only the correct option index; validates before clicking
-- **Coding solver** — reads problem + constraints + sample I/O, generates runnable code
-- **Response validator** — strips markdown fences, checks for empty output
-- **Multi-language** — Python, C++, Java, JavaScript detected from editor language
+### Known issues / in progress
+
+- Coding solver accuracy depends on LLM quality and problem complexity
+- Planning: solutions database for fallback (verified community solutions)
+- Decryption warning for unencrypted API keys is non-fatal (has fallback path)
+- Supabase `url` column removed from task insert — schema must match current `schema.sql`
 
 ---
 
@@ -186,16 +228,18 @@ user_stats    → computed view: success rate, totals by task type
 ```
 Phase 0  ████████████████████  ✅  Project setup + Supabase schema
 Phase 1  ████████████████████  ✅  Chrome extension (MV3) — full build
-Phase 2  ████████████░░░░░░░░  🔧  Portal solvers — MCQ done, coding in progress
+Phase 2  ████████████████████  ✅  Portal solvers — MCQ, Live Quiz, Coding done
 Phase 3  ░░░░░░░░░░░░░░░░░░░░  ⬜  React dashboard
 Phase 4  ░░░░░░░░░░░░░░░░░░░░  ⬜  Telegram notifications
 Phase 5  ░░░░░░░░░░░░░░░░░░░░  ⬜  Railway / Vercel deployment
 ```
 
 - [x] **Phase 0** — Monorepo setup, Supabase schema (users, sessions, tasks, runs, user_stats), Python venv, React + Vite scaffold
-- [x] **Phase 1** — Chrome extension: MV3 manifest, background.js service worker, content.js, page_bridge.js (MAIN world Monaco detection), auth_bridge.js (MAIN world auth capture), popup UI, options page, overlay
+- [x] **Phase 1** — Chrome extension: MV3 manifest, background.js service worker, content.js, page_bridge.js (MAIN world Monaco bridge), auth_bridge.js (MAIN world auth capture), popup UI, options page, overlay
 - [x] **Phase 1** — FastAPI backend: `/auth/register`, `/auth/login`, `/auth/verify`, `/auth/update`, `POST /solve`, `/tasks` CRUD; provider-agnostic solver (Groq / Claude / GPT-4o / Gemini); AES-256 key encryption
-- [🔧] **Phase 2** — MCQ solver fully working; coding solver in progress (Monaco editor detection via page_bridge.js, CSP issues resolved)
+- [x] **Phase 2** — MCQ solver fully working with auto-navigation and submission
+- [x] **Phase 2** — Live quiz solver (`/lecture/*/live`) — detects polls, solves, submits
+- [x] **Phase 2** — Coding solver — Monaco bridge, problem extraction, INPUT fill, 3-attempt retry with error context, TypeScript-specific LLM rules, CORS fix for extension origins
 - [ ] **Phase 2** — Jupyter Notebook solver, Excel solver, Power BI solver
 - [ ] **Phase 3** — React dashboard: live task feed, run log viewer, stats cards, per-course toggles
 - [ ] **Phase 4** — Telegram bot notifications, daily digest
@@ -225,12 +269,13 @@ source venv/bin/activate
 pip3 install -r requirements.txt
 ```
 
-Fill in `backend/.env`:
+Fill in `backend/.env` (copy from `.env.example`):
 ```env
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_KEY=your-service-role-key
 AES_SECRET_KEY=your-64-char-hex-key
 BACKEND_URL=http://localhost:8000
+CORS_ORIGINS=*
 ```
 
 Generate AES key:
@@ -269,7 +314,7 @@ Save the `api_token` from the response — you'll need it for the extension.
 5. Click the extension icon → open **Settings**
 6. Paste your `api_token` and save
 
-The extension will start detecting and solving MCQ quizzes automatically when you visit `my.newtonschool.co`.
+The extension will start detecting and solving tasks automatically on `my.newtonschool.co`.
 
 ---
 
@@ -287,6 +332,22 @@ The extension will start detecting and solving MCQ quizzes automatically when yo
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/solve` | Send question, get answer |
+
+Payload for MCQ:
+```json
+{ "task_type": "mcq", "question": "...", "options": ["A", "B", "C", "D"] }
+```
+
+Payload for coding:
+```json
+{
+  "task_type": "coding",
+  "question": "...",
+  "language": "typescript",
+  "starter_code": "...",
+  "error_context": "optional — previous attempt stderr/results"
+}
+```
 
 ### Tasks
 | Method | Endpoint | Description |
@@ -309,6 +370,7 @@ The extension will start detecting and solving MCQ quizzes automatically when yo
 | `SUPABASE_KEY` | Service role (secret) key | ✅ |
 | `AES_SECRET_KEY` | 64-char hex for encrypting credentials | ✅ |
 | `BACKEND_URL` | Server URL | ✅ |
+| `CORS_ORIGINS` | Allowed origins (`*` covers chrome-extension://) | Optional |
 | `TELEGRAM_BOT_TOKEN` | For Telegram notifications | Optional |
 
 ### `dashboard/.env`
@@ -327,6 +389,7 @@ The extension will start detecting and solving MCQ quizzes automatically when yo
 - **Row Level Security (RLS)** — students only see their own data
 - **Bearer token auth** on every extension → backend request
 - **No inline scripts** — CSP-safe MV3 extension using MAIN world content scripts instead of `<script>` injection
+- **CORS** — `allow_origins=["*"]` with `allow_credentials=False` (required to support `chrome-extension://` origins; credentials mode is incompatible with wildcard origins per the CORS spec)
 - `.env` files are gitignored and never committed
 
 ---
