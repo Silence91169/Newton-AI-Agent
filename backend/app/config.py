@@ -54,6 +54,9 @@ BACKEND_URL: str        = os.getenv("BACKEND_URL", "http://localhost:8000")
 ENVIRONMENT: str        = os.getenv("ENVIRONMENT", "development")
 
 # Comma-separated list of allowed CORS origins, or "*" for all.
+# chrome-extension://* origins are handled by setting allow_origins=["*"]
+# with allow_credentials=False in main.py — the wildcard is the only way
+# to cover arbitrary extension IDs without enumerating them.
 CORS_ORIGINS: list[str] = [
     o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()
 ]

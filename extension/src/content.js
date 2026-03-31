@@ -469,6 +469,155 @@ async function runCoding() {
   }
 }
 
+// ═══════════════════════════════════════════════════════
+// LIVE QUIZ SOLVER  (/lecture/*/live)
+// ═══════════════════════════════════════════════════════
+
+function extractLiveQuiz() {
+  const qEl = document.querySelector('[class*="sc-f9e3e3ee-4"]');
+  if (!qEl) return null;
+
+  const optEls = document.querySelectorAll('[class*="sc-5a2039c7-15"]');
+  if (!optEls.length) return null;
+
+  const counterEl = document.querySelector('[class*="sc-5a2039c7-5"]');
+  const counterText = counterEl?.textContent?.trim() ?? '';
+  const counterMatch = counterText.match(/Question\s+(\d+)/);
+  const current = counterMatch ? parseInt(counterMatch[1]) : 1;
+
+  return {
+    question: qEl.textContent.trim(),
+    options: Array.from(optEls).map((o) => o.textContent.trim()),
+    current,
+  };
+}
+
+function clickLiveOption(idx) {
+  const wrappers = document.querySelectorAll('[class*="sc-67e9c95b-3"]');
+  if (wrappers[idx]) {
+    wrappers[idx].click();
+    return true;
+  }
+  const optEls = document.querySelectorAll('[class*="sc-5a2039c7-15"]');
+  if (optEls[idx]) {
+    optEls[idx].click();
+    return true;
+  }
+  return false;
+}
+
+function getLiveNextButton() {
+  for (const btn of document.querySelectorAll('button[class*="sc-bb799bb6-1"]')) {
+    if (btn.textContent.trim() === 'Next') return btn;
+  }
+  return null;
+}
+
+function getLiveSubmitButton() {
+  for (const btn of document.querySelectorAll('button[class*="sc-bb799bb6-1"]')) {
+    const t = btn.textContent.trim();
+    if (t === 'Submit' || t === 'Finish' || t === 'Done') return btn;
+  }
+  return null;
+}
+
+function getTotalLiveQuestions() {
+  let max = 0;
+  document.querySelectorAll('[class*="sc-"]').forEach((el) => {
+    const m = el.textContent.trim().match(/^Q(\d+)\./);
+    if (m) max = Math.max(max, parseInt(m[1]));
+  });
+  return max || null;
+}
+
+async function runLiveQuiz() {
+  if (state.solving) return;
+  state.solving = true;
+
+  setStatus('Live quiz detected — starting…', '#89b4fa', '#89b4fa');
+
+  try {
+    await sleep(1500);
+
+    for (let attempt = 0; attempt < 100; attempt++) {
+      await waitForElement('[class*="sc-f9e3e3ee-4"]', 10000).catch(() => null);
+      await sleep(400);
+
+      const q = extractLiveQuiz();
+      if (!q) {
+        setStatus('Could not read question', '#f38ba8', '#f38ba8');
+        break;
+      }
+
+      const total = getTotalLiveQuestions() ?? q.current;
+      setStatus(`Solving Q${q.current}/${total}…`, '#89b4fa', '#89b4fa');
+      setProgress(((q.current - 1) / total) * 100);
+
+      const result = await requestSolve({
+        task_type: 'mcq',
+        question:  q.question,
+        options:   q.options,
+      });
+
+      if (result?.error) {
+        setStatus(`Error: ${result.error}`, '#f38ba8', '#f38ba8');
+        break;
+      }
+
+      const idx = parseInt(result.answer, 10);
+      if (isNaN(idx) || idx < 0 || idx >= q.options.length) {
+        setStatus(`Bad answer: "${result.answer}"`, '#f38ba8', '#f38ba8');
+        break;
+      }
+
+      const clicked = clickLiveOption(idx);
+      if (!clicked) {
+        setStatus(`Option ${idx} not found`, '#f38ba8', '#f38ba8');
+        break;
+      }
+
+      setStatus(
+        `Q${q.current}: picked "${q.options[idx]}"`,
+        '#a6e3a1', '#22c55e'
+      );
+      await sleep(500);
+
+      const submitBtn = getLiveSubmitButton();
+      const nextBtn   = getLiveNextButton();
+
+      if (submitBtn) {
+        submitBtn.click();
+        setProgress(100);
+        setStatus(`Quiz submitted! (${total} questions answered)`, '#a6e3a1', '#22c55e');
+        chrome.runtime.sendMessage({ type: 'INCREMENT_SOLVED' }).catch(() => {});
+        break;
+      }
+
+      if (!nextBtn) {
+        setStatus('Next button not found — stopping', '#f38ba8', '#f38ba8');
+        break;
+      }
+
+      const prevQuestion = q.question;
+      nextBtn.click();
+
+      let waited = 0;
+      while (waited < 8000) {
+        await sleep(300);
+        waited += 300;
+        const el = document.querySelector('[class*="sc-f9e3e3ee-4"]');
+        if (el && el.textContent.trim() !== prevQuestion) break;
+      }
+    }
+  } catch (err) {
+    setStatus(`Live quiz error: ${err.message}`, '#f38ba8', '#f38ba8');
+    console.error('[Newton AI] Live quiz error', err);
+  } finally {
+    state.solving = false;
+    setProgress(null);
+  }
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // PAGE DETECTION & INIT
 // ═════════════════════════════════════════════════════════════════════════════
@@ -477,6 +626,7 @@ function classifyPage() {
   const p = window.location.pathname;
   if (p.includes('/assessment/'))   return 'mcq';
   if (p.includes('/playground/code/')) return 'coding';
+  if (p.includes('/live')) return 'live_quiz';
   return null;
 }
 
@@ -500,6 +650,9 @@ async function initPage() {
   if (kind === 'mcq') {
     setStatus('MCQ detected — starting…', '#89b4fa', '#89b4fa');
     runMCQ();
+  } else if (kind === 'live_quiz') {
+    setStatus('Live quiz detected — starting…', '#89b4fa', '#89b4fa');
+    runLiveQuiz();
   } else if (kind === 'coding' && !state.codingInitialized) {
     state.codingInitialized = true;
     setStatus('Coding challenge detected…', '#89b4fa', '#89b4fa');
