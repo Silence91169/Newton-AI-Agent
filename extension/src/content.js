@@ -256,58 +256,37 @@ async function runMCQ() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 function getEditor(idx) {
-  try { return window.monaco?.editor?.getEditors?.()?.[idx] ?? null; }
-  catch { return null; }
+  // Cannot access monaco directly from isolated world
+  // Use page_bridge via CustomEvents instead
+  return null;
 }
 
-async function waitForMonaco(timeout = 15000) {
+async function waitForMonaco(timeout = 20000) {
   const start = Date.now();
   state.monacoEditorIdx = null;
+
+  await sleep(2000); // let Monaco finish mounting
+
   while (Date.now() - start < timeout) {
-    // Ask page_bridge.js (MAIN world) to find the editor index
     document.dispatchEvent(new CustomEvent('naa_find_editor'));
-    await sleep(500);
-    if (state.monacoEditorIdx !== null) {
-      const ed = getEditor(state.monacoEditorIdx);
-      if (ed) return ed;
-      // Index received but getEditor() failed — reset and keep polling
-      state.monacoEditorIdx = null;
-    }
+    await sleep(800);
+    if (state.monacoEditorIdx !== null) return { idx: state.monacoEditorIdx };
   }
   return null;
 }
 
-function setEditorCode(editor, code) {
-  const model = editor.getModel();
-  const range = model.getFullModelRange();
-
-  editor.executeEdits('newton-agent', [{
-    range,
-    text: code,
-    forceMoveMarkers: true,
-  }]);
-  editor.pushUndoStop();
-
-  // Trigger React controlled-input onChange via fiber walk
-  try {
-    const dom = editor.getDomNode();
-    if (!dom) return;
-    // Walk up to find the Monaco wrapper that React attached to
-    const container = dom.closest('.overflow-guard') || dom;
-    const fiberKey = Object.keys(container).find(
-      (k) => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'),
-    );
-    if (!fiberKey) return;
-    let node = container[fiberKey];
-    while (node) {
-      const props = node.memoizedProps || node.pendingProps || {};
-      if (typeof props.onChange === 'function') {
-        props.onChange(code);
-        break;
-      }
-      node = node.return;
-    }
-  } catch { /* not a React-controlled editor — that's fine */ }
+async function setEditorCode(editorRef, code) {
+  return new Promise((resolve) => {
+    const handler = (e) => {
+      document.removeEventListener('naa_set_code_result', handler);
+      resolve(e.detail?.ok ?? false);
+    };
+    document.addEventListener('naa_set_code_result', handler);
+    document.dispatchEvent(new CustomEvent('naa_set_code', {
+      detail: { idx: editorRef.idx, code }
+    }));
+    setTimeout(() => { document.removeEventListener('naa_set_code_result', handler); resolve(false); }, 3000);
+  });
 }
 
 async function dismissPopup(text) {
@@ -317,52 +296,89 @@ async function dismissPopup(text) {
 }
 
 async function waitForExecution(timeoutMs = 30000) {
-  await sleep(1500);
+  await sleep(2000);
   const deadline = Date.now() + timeoutMs;
+
   while (Date.now() < deadline) {
-    const errEd = getEditor(3);
-    if (errEd) {
-      const val = errEd.getValue();
-      if (val && !val.startsWith('Running Code')) {
-        return {
-          output: getEditor(2)?.getValue() ?? '',
-          error:  val,
-        };
-      }
-    }
-    await sleep(500);
+    const result = await new Promise((resolve) => {
+      const handler = (e) => {
+        document.removeEventListener('naa_output_result', handler);
+        resolve(e.detail);
+      };
+      document.addEventListener('naa_output_result', handler);
+      document.dispatchEvent(new CustomEvent('naa_get_output'));
+      setTimeout(() => { document.removeEventListener('naa_output_result', handler); resolve({ output: '', error: '' }); }, 2000);
+    });
+
+    if (result.output || result.error) return result;
+    await sleep(800);
   }
-  return { output: getEditor(2)?.getValue() ?? '', error: '' };
+  return { output: '', error: '' };
 }
 
 function extractProblemDescription() {
-  // Try progressively broader selectors to find the problem statement
-  const selectors = [
-    '[class*="problem"]',
-    '[class*="Problem"]',
-    '[class*="description"]',
-    '[class*="Description"]',
-    '[class*="statement"]',
-    '[class*="question"]',
-    '[class*="Question"]',
-  ];
+  // Primary: exact class fragment found by DOM inspection
+  const primary = document.querySelector('[class*="sc-3ef8580b-6"]');
+  if (primary) {
+    const text = (primary.innerText || '').trim();
+    if (text.length > 60) return text.substring(0, 6000);
+  }
 
-  for (const sel of selectors) {
-    for (const el of document.querySelectorAll(sel)) {
-      if (el.closest('.monaco-editor') || el.closest('#naa-overlay')) continue;
-      const text = (el.innerText || '').trim();
-      if (text.length > 60 && text.length < 12000) return text;
+  // Secondary: the clean description div without title/header
+  const secondary = document.querySelector('[class*="sc-3ef8580b-11"]');
+  if (secondary) {
+    const text = (secondary.innerText || '').trim();
+    if (text.length > 60) return text.substring(0, 6000);
+  }
+
+  // Fallback: find div with no-text-select class containing problem text
+  let best = '';
+  document.querySelectorAll('div[class*="no-text-select"]').forEach(div => {
+    if (div.closest('.monaco-editor') || div.id === 'naa-overlay') return;
+    const text = (div.innerText || '').trim();
+    if (text.length > best.length && text.length < 8000) best = text;
+  });
+  if (best.length > 60) return best.substring(0, 6000);
+
+  // Last resort
+  return 'Solve the given programming problem using the starter code provided.';
+}
+
+function extractExampleInput() {
+  const panel = document.querySelector('[class*="sc-3ef8580b-6"]');
+  if (!panel) return '';
+  const text = panel.innerText || '';
+  const inputMatch = text.match(/(?:Input|INPUT)\s*\n([\s\S]*?)(?:\n(?:Output|OUTPUT|Example|Constraints))/);
+  if (inputMatch) return inputMatch[1].trim();
+  const exampleMatch = text.match(/(?:Example|EXAMPLE)[\s\S]*?(?:Input|INPUT)\s*\n([\s\S]*?)(?:\n(?:Output|OUTPUT))/);
+  if (exampleMatch) return exampleMatch[1].trim();
+  return '';
+}
+
+async function fillInputEditor(inputText) {
+  if (!inputText || !inputText.trim()) return;
+  const tabs = document.querySelectorAll('[class*="sc-7172b4-4"]');
+  for (const tab of tabs) {
+    if (tab.textContent.trim() === 'INPUT') {
+      tab.click();
+      await sleep(500);
+      break;
     }
   }
-
-  // Fallback: grab text from the left half of the viewport
-  for (const el of document.querySelectorAll('main, [class*="left"], [class*="Left"], [class*="panel"]')) {
-    if (el.closest('.monaco-editor')) continue;
-    const text = (el.innerText || '').trim();
-    if (text.length > 60) return text.substring(0, 4000);
-  }
-
-  return 'Solve the given programming problem using the starter code provided.';
+  return new Promise((resolve) => {
+    const handler = (e) => {
+      document.removeEventListener('naa_set_code_result', handler);
+      resolve(e.detail?.ok ?? false);
+    };
+    document.addEventListener('naa_set_code_result', handler);
+    document.dispatchEvent(new CustomEvent('naa_set_code', {
+      detail: { idx: 0, code: inputText }
+    }));
+    setTimeout(() => {
+      document.removeEventListener('naa_set_code_result', handler);
+      resolve(false);
+    }, 3000);
+  });
 }
 
 async function runCoding() {
@@ -379,9 +395,29 @@ async function runCoding() {
       return;
     }
 
-    const language    = editor.getModel()?.getLanguageId() ?? 'python';
-    const starterCode = editor.getValue();
-    const problem     = extractProblemDescription();
+    // Get starter code via bridge
+    const starterCode = await new Promise((resolve) => {
+      const handler = (e) => {
+        document.removeEventListener('naa_code_result', handler);
+        resolve(e.detail?.code ?? '');
+      };
+      document.addEventListener('naa_code_result', handler);
+      document.dispatchEvent(new CustomEvent('naa_get_code', { detail: { idx: editor.idx } }));
+      setTimeout(() => { document.removeEventListener('naa_code_result', handler); resolve(''); }, 3000);
+    });
+
+    // Detect language from editor dropdown text
+    const langEl = document.querySelector('[class*="sc-6e1082ef-2"]')
+                || document.querySelector('[class*="cOVIPX"]');
+    const langText = langEl?.textContent?.trim()?.toLowerCase() ?? '';
+    const language = langText.includes('python') ? 'python'
+      : langText.includes('typescript') ? 'typescript'
+      : langText.includes('javascript') ? 'javascript'
+      : langText.includes('java') ? 'java'
+      : langText.includes('c++') || langText.includes('cpp') ? 'cpp'
+      : 'typescript';
+
+    const problem = extractProblemDescription();
 
     setStatus(`Generating ${language} solution…`, '#89b4fa', '#89b4fa');
     setProgress(20);
@@ -410,13 +446,19 @@ async function runCoding() {
       setProgress(45);
 
       // Write solution into editor
-      setEditorCode(editor, solution);
+      await setEditorCode(editor, solution);
       await sleep(500);
       await dismissPopup('Keep Paste');
 
       // Run
       setStatus(`Running code (attempt ${attempt}/3)…`, '#89b4fa', '#89b4fa');
       setProgress(55);
+
+      const exampleInput = extractExampleInput();
+      if (exampleInput) {
+        await fillInputEditor(exampleInput);
+        await sleep(300);
+      }
 
       const runBtn = document.querySelector('[class*="dMnLDi"]');
       if (!runBtn) {
@@ -430,34 +472,48 @@ async function runCoding() {
       const { output, error } = await waitForExecution(25000);
       setProgress(80);
 
-      const hasRuntimeError = error &&
-        !error.startsWith('Running Code') &&
-        (error.includes('Error')      ||
-         error.includes('Traceback')  ||
-         error.includes('exception')  ||
-         error.toLowerCase().includes('failed') ||
-         error.toLowerCase().includes('stderr'));
-
-      if (hasRuntimeError && attempt < 3) {
-        lastError = `Attempt ${attempt} failed.\nSTDERR:\n${error}\nSTDOUT:\n${output}`;
-        await sleep(1000);
-        continue;
-      }
-
-      // Submit
-      setStatus('Submitting solution…', '#a6e3a1', '#a6e3a1');
-      setProgress(90);
-
+      // Check submission results after clicking submit
       const submitBtn = document.querySelector('[class*="dAAjdS"]');
       if (!submitBtn) {
         setStatus('Submit button not found', '#f38ba8', '#f38ba8');
         break;
       }
+
       submitBtn.click();
       await dismissPopup('Submit anyway');
+      await sleep(4000); // wait for test results to load
 
+      // Check if all test cases passed
+      const failedTests = document.querySelectorAll('[class*="sc-"] svg[class*="red"], [class*="sc-"] [class*="error"], [class*="sc-"] [class*="failed"]');
+      const passedAll = document.querySelectorAll('[class*="sc-"] [class*="pass"], [class*="sc-"] [class*="success"]').length > 0
+                     && failedTests.length === 0;
+
+      // Get test case results text for error context
+      const resultsPanel = document.querySelector('[class*="sc-"][class*="submission"], [class*="sc-"][class*="result"]');
+      const resultsText = resultsPanel?.innerText ?? '';
+
+      const hasRuntimeError = error &&
+        !error.startsWith('Running Code') &&
+        (error.includes('Error') || error.includes('Traceback') ||
+         error.includes('exception') || error.toLowerCase().includes('failed'));
+
+      if (passedAll) {
+        setProgress(100);
+        setStatus('All test cases passed! ✅', '#a6e3a1', '#22c55e');
+        chrome.runtime.sendMessage({ type: 'INCREMENT_SOLVED' }).catch(() => {});
+        break;
+      }
+
+      if (attempt < 3) {
+        lastError = `Attempt ${attempt} failed.\nTest Results:\n${resultsText}\nSTDERR:\n${error}\nSTDOUT:\n${output}`;
+        setStatus(`Attempt ${attempt}/3 failed — retrying with error context…`, '#fab387', '#fab387');
+        await sleep(1500);
+        continue;
+      }
+
+      // Max attempts reached
       setProgress(100);
-      setStatus('Solution submitted!', '#a6e3a1', '#22c55e');
+      setStatus(`Submitted (${attempt} attempts — check results)`, '#f9e2af', '#f9e2af');
       chrome.runtime.sendMessage({ type: 'INCREMENT_SOLVED' }).catch(() => {});
       break;
     }

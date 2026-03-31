@@ -106,7 +106,27 @@ def _build_coding_prompt(
         "- Do NOT redefine types or interfaces already declared in the starter code.",
         "- Do NOT wrap the code in markdown fences.",
         "- Do NOT include any explanation before or after the code.",
+        "",
+        "## Critical Requirements",
+        "- Read ALL class/interface definitions in the starter code carefully",
+        "- Do NOT redefine interfaces or types already declared",
+        "- implement ALL methods mentioned in the problem description",
+        "- Handle ALL edge cases mentioned",
+        "- The solution will be tested against hidden test cases",
+        f"- Return ONLY the complete runnable {language} code, no markdown fences",
+        "- Make sure the code compiles and runs without errors",
     ]
+
+    if language.lower() in ("typescript", "ts"):
+        parts += [
+            "",
+            "## TypeScript Specific Rules",
+            "- Do NOT use require() — do NOT add any import statements",
+            "- Do NOT redefine interfaces already declared in starter code",
+            "- Only implement the method bodies asked for",
+            "- Keep ALL existing code structure exactly as given",
+            "- The test runner handles I/O automatically",
+        ]
 
     return "\n".join(parts)
 
