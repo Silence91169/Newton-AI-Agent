@@ -406,6 +406,6 @@ Payload for coding:
 
 ## Disclaimer
 
-This project was built as a challenge assignment at Newton School of Technology. Use responsibly and in accordance with your institution's academic policies.
+This project was a challenge assignment  Use responsibly.
 
 ---
