@@ -25,27 +25,20 @@ function classifyCurrentTab(url) {
   return { label: 'Not on Newton', dot: '#6b7280' };
 }
 
-async function refreshConnectionBadge(api_token, backend_url) {
+function refreshConnectionBadge(groq_api_key, newton_user) {
   const badge = $('conn-badge');
-  if (!api_token) {
-    badge.textContent = 'No token set';
+  if (!groq_api_key) {
+    badge.textContent = 'No Groq key';
     badge.className = 'badge badge-error';
     return;
   }
-  badge.textContent = 'Checking…';
-  badge.className = 'badge badge-checking';
-  const result = await chrome.runtime.sendMessage({
-    type: 'TEST_CONNECTION',
-    api_token,
-    backend_url,
-  });
-  if (result?.ok) {
-    badge.textContent = 'Connected';
-    badge.className = 'badge badge-ok';
-  } else {
-    badge.textContent = 'Offline';
-    badge.className = 'badge badge-error';
+  if (!newton_user?.id && !newton_user?.email) {
+    badge.textContent = 'Login to Newton';
+    badge.className = 'badge badge-checking';
+    return;
   }
+  badge.textContent = 'Ready';
+  badge.className = 'badge badge-ok';
 }
 
 async function render() {
@@ -73,8 +66,8 @@ async function render() {
   $('page-label').textContent = label;
   $('page-dot').style.background = dot;
 
-  // Connection badge (async — fires after render)
-  refreshConnectionBadge(settings.api_token, settings.backend_url);
+  // Connection badge
+  refreshConnectionBadge(settings.groq_api_key, settings.newton_user);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

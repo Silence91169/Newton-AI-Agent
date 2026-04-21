@@ -5,14 +5,49 @@
 'use strict';
 
 (function () {
+  // Decode a JWT payload (base64url → JSON). Returns null if not a valid JWT.
+  function decodeJwt(token) {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return null;
+      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
+      return JSON.parse(atob(padded));
+    } catch {
+      return null;
+    }
+  }
+
+  let lastCapturedId = null; // deduplicate — avoid re-dispatching for the same user
+
   function capture(auth, cid, csec) {
     if (!auth || !auth.startsWith('Bearer ')) return;
+
+    // Dispatch raw auth headers (for existing usage in content.js)
     document.dispatchEvent(new CustomEvent('naa_auth_captured', {
       detail: {
         authorization: auth,
         clientId:      cid  || '',
         clientSecret:  csec || '',
       },
+    }));
+
+    // Decode JWT to extract Newton user identity
+    const token   = auth.slice(7); // strip 'Bearer '
+    const payload = decodeJwt(token);
+    if (!payload) return;
+
+    // Try common JWT claim names used by Newton / backend frameworks
+    const id       = String(payload.user_id || payload.id || payload.sub || '');
+    const email    = payload.email    || null;
+    const username = payload.username || payload.name || payload.preferred_username || null;
+
+    if (!id && !email) return; // nothing useful to surface
+    if (id && id === lastCapturedId) return; // same session, skip
+    lastCapturedId = id || null;
+
+    document.dispatchEvent(new CustomEvent('naa_user_captured', {
+      detail: { id, email, username },
     }));
   }
 

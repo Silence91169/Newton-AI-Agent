@@ -50,13 +50,9 @@ app.add_middleware(
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-from app.routes.auth  import router as auth_router   # noqa: E402
 from app.routes.solve import router as solve_router  # noqa: E402
-from app.routes.tasks import router as tasks_router  # noqa: E402
 
-app.include_router(auth_router)
 app.include_router(solve_router)
-app.include_router(tasks_router)
 
 # ── Root routes ───────────────────────────────────────────────────────────────
 

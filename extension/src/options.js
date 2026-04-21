@@ -1,7 +1,6 @@
 // Newton AI Agent — Options Script
 'use strict';
 
-const DEFAULT_BACKEND = 'http://localhost:8000';
 const $ = (id) => document.getElementById(id);
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -14,23 +13,41 @@ function showToast(msg, type = 'success') {
   toastTimer = setTimeout(() => { el.className = 'toast hidden'; }, 3000);
 }
 
+// ── Newton account display ────────────────────────────────────────────────────
+function renderAccount(newton_user) {
+  const statusEl = $('account-status');
+  const labelEl  = $('account-label');
+
+  if (!newton_user || (!newton_user.id && !newton_user.email)) {
+    statusEl.className = 'account-status account-unknown';
+    labelEl.textContent = 'Not detected — log into my.newtonschool.co first';
+    return;
+  }
+
+  statusEl.className = 'account-status account-ok';
+  const display = newton_user.email || newton_user.username || newton_user.id;
+  labelEl.textContent = `Logged in as ${display}`;
+}
+
 // ── Load settings from storage ────────────────────────────────────────────────
 async function load() {
-  const settings = await chrome.storage.sync.get({
-    api_token:   '',
-    backend_url: DEFAULT_BACKEND,
-  });
-  $('inp-token').value = settings.api_token;
-  $('inp-url').value   = settings.backend_url;
+  const { groq_api_key = '', newton_user = null } =
+    await chrome.storage.sync.get({ groq_api_key: '', newton_user: null });
+
+  $('inp-groq-key').value = groq_api_key;
+  renderAccount(newton_user);
 }
 
 // ── Save settings ─────────────────────────────────────────────────────────────
 async function save() {
-  const token = $('inp-token').value.trim();
-  const url   = $('inp-url').value.trim() || DEFAULT_BACKEND;
+  const key = $('inp-groq-key').value.trim();
 
-  if (!token) {
-    showToast('API token cannot be empty', 'error');
+  if (!key) {
+    showToast('Groq API key cannot be empty', 'error');
+    return;
+  }
+  if (!key.startsWith('gsk_')) {
+    showToast('Key should start with gsk_ — check your Groq console', 'error');
     return;
   }
 
@@ -40,60 +57,17 @@ async function save() {
 
   await chrome.runtime.sendMessage({
     type:    'SAVE_SETTINGS',
-    payload: { api_token: token, backend_url: url },
+    payload: { groq_api_key: key },
   });
 
   btn.disabled = false;
-  btn.textContent = 'Save Settings';
+  btn.textContent = 'Save';
   showToast('Settings saved', 'success');
 }
 
-// ── Reset ─────────────────────────────────────────────────────────────────────
-async function reset() {
-  if (!confirm('Reset backend URL to default (localhost:8000)?')) return;
-  $('inp-url').value = DEFAULT_BACKEND;
-  await save();
-}
-
-// ── Test connection ───────────────────────────────────────────────────────────
-async function testConnection() {
-  const token = $('inp-token').value.trim();
-  const url   = $('inp-url').value.trim() || DEFAULT_BACKEND;
-  const result = $('test-result');
-  const btn = $('btn-test');
-
-  if (!token) {
-    result.textContent = 'Enter a token first';
-    result.className = 'test-result test-error';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Testing…';
-  result.textContent = '';
-  result.className = 'test-result';
-
-  const res = await chrome.runtime.sendMessage({
-    type:        'TEST_CONNECTION',
-    api_token:   token,
-    backend_url: url,
-  });
-
-  btn.disabled = false;
-  btn.textContent = 'Test Connection';
-
-  if (res?.ok) {
-    result.textContent = `Connected${res.user?.name ? ` as ${res.user.name}` : ''}`;
-    result.className = 'test-result test-ok';
-  } else {
-    result.textContent = `Failed: ${res?.error || 'unknown error'}`;
-    result.className = 'test-result test-error';
-  }
-}
-
-// ── Toggle password visibility ────────────────────────────────────────────────
-function toggleTokenVisibility() {
-  const inp = $('inp-token');
+// ── Toggle key visibility ─────────────────────────────────────────────────────
+function toggleKeyVisibility() {
+  const inp = $('inp-groq-key');
   inp.type = inp.type === 'password' ? 'text' : 'password';
 }
 
@@ -102,19 +76,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await load();
 
   $('btn-save').addEventListener('click', save);
-  $('btn-reset').addEventListener('click', reset);
-  $('btn-test').addEventListener('click', testConnection);
-  $('btn-show-token').addEventListener('click', toggleTokenVisibility);
+  $('btn-show-key').addEventListener('click', toggleKeyVisibility);
 
-  // Save on Enter key in inputs
-  ['inp-token', 'inp-url'].forEach((id) => {
-    $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
-  });
-
-  // Dashboard link — open dashboard registration page
-  $('link-dashboard').addEventListener('click', (e) => {
-    e.preventDefault();
-    const backendUrl = $('inp-url').value.trim() || DEFAULT_BACKEND;
-    chrome.tabs.create({ url: `${backendUrl}/dashboard` });
+  $('inp-groq-key').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') save();
   });
 });

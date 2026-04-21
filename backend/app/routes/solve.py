@@ -2,26 +2,25 @@
 Newton AI Agent — Solve endpoint.
 
 POST /solve
-  Body: SolveRequest (api_token in body, not header)
-  Returns: SolveResponse { answer, task_id }
+  Body: { groq_api_key, newton_user, task_type, question, ... }
 
 Flow:
-  1. Look up user by api_token from request body
-  2. Decrypt their LLM API key
-  3. Create a task record (status=solving)
-  4. Run the LLM solver
-  5. Store the run record
-  6. Update task status (solved / failed)
-  7. Return the answer
+  1. Validate groq_api_key is present
+  2. Derive a stable newton_user_id from newton_user (or fallback to key hash)
+  3. Upsert user in Supabase (auto-register on first request)
+  4. Run the Groq solver
+  5. Log to usage_logs
+  6. Return the answer
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from app.config import decrypt
+from app.config import encrypt
 from app.db.supabase import supabase
 from app.models.schemas import SolveRequest, SolveResponse
 from app.services import solver as solver_svc
@@ -35,53 +34,28 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _make_title(req: SolveRequest) -> str:
-    """Short human-readable task title derived from the question."""
-    prefix = {
-        "mcq":        "MCQ",
-        "coding":     "Coding",
-        "assignment": "Assignment",
-    }.get(req.task_type, req.task_type.upper())
-    snippet = (req.question or "")[:60].replace("\n", " ").strip()
-    return f"[{prefix}] {snippet}…" if len(req.question or "") > 60 else f"[{prefix}] {snippet}"
+def _derive_user_id(req: SolveRequest) -> str:
+    """
+    Return a stable string identifier for the Newton user.
+    Priority: JWT id → email → sha256 of first 16 chars of groq key (last resort).
+    """
+    if req.newton_user:
+        if req.newton_user.id:
+            return req.newton_user.id
+        if req.newton_user.email:
+            return req.newton_user.email
+    # Fallback: hash a prefix of the key so we can still track usage
+    return "key:" + hashlib.sha256(req.groq_api_key[:16].encode()).hexdigest()[:16]
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
 
 @router.post("/solve", response_model=SolveResponse)
 async def solve_endpoint(req: SolveRequest):
-    # ── 1. Authenticate via api_token in body ──────────────────────────────
-    if not req.api_token:
-        raise HTTPException(status_code=401, detail="api_token is required")
+    # ── 1. Validate ────────────────────────────────────────────────────────────
+    if not req.groq_api_key:
+        raise HTTPException(status_code=400, detail="groq_api_key is required")
 
-    try:
-        user_result = (
-            supabase.table("users")
-            .select("id, name, llm_provider, llm_api_key_enc, is_active")
-            .eq("api_token", req.api_token)
-            .single()
-            .execute()
-        )
-    except Exception as exc:
-        logger.error(f"[solve] DB lookup error: {exc}")
-        raise HTTPException(status_code=503, detail="Database unavailable")
-
-    if not user_result.data:
-        raise HTTPException(status_code=401, detail="Invalid API token")
-
-    user = user_result.data
-    if not user.get("is_active", True):
-        raise HTTPException(status_code=403, detail="Agent is disabled for this account")
-
-    # ── 2. Decrypt LLM API key ─────────────────────────────────────────────
-    try:
-        llm_api_key = decrypt(user["llm_api_key_enc"])
-    except Exception:
-        # Key may be stored unencrypted — use the raw value as-is
-        logger.warning(f"[solve] Decryption failed for user {user['id']}, using raw key value")
-        llm_api_key = user["llm_api_key_enc"]
-
-    # ── 3. Validate task_type ─────────────────────────────────────────────
     if req.task_type not in ("mcq", "coding", "assignment"):
         raise HTTPException(
             status_code=422,
@@ -90,35 +64,39 @@ async def solve_endpoint(req: SolveRequest):
     if req.task_type == "mcq" and not req.options:
         raise HTTPException(status_code=422, detail="options is required for MCQ tasks")
 
-    # ── 4. Create task record ──────────────────────────────────────────────
-    task_row = {
-        "user_id":   user["id"],
-        "task_type": req.task_type,
-        "title":     _make_title(req),
-        "url":       req.url,
-        "status":    "solving",
-    }
+    # ── 2. Derive user identity ────────────────────────────────────────────────
+    newton_user_id = _derive_user_id(req)
+    email    = req.newton_user.email    if req.newton_user else None
+    username = req.newton_user.username if req.newton_user else None
+
+    # ── 3. Upsert user in Supabase ─────────────────────────────────────────────
     try:
-        task_result = supabase.table("tasks").insert(task_row).execute()
-        task_id: str = task_result.data[0]["id"]
+        supabase.table("users").upsert(
+            {
+                "newton_user_id":   newton_user_id,
+                "email":            email,
+                "username":         username,
+                "groq_api_key_enc": encrypt(req.groq_api_key),
+                "last_seen":        _now_iso(),
+            },
+            on_conflict="newton_user_id",
+        ).execute()
     except Exception as exc:
-        logger.error(f"[solve] Task insert error: {exc}")
-        # Non-fatal — proceed without a task_id
-        task_id = None  # type: ignore[assignment]
+        # Non-fatal — we log and continue so a DB hiccup never blocks a solve
+        logger.warning(f"[solve] User upsert failed (non-fatal): {exc}")
 
     logger.info(
-        f"[solve] user={user['name']} type={req.task_type} "
-        f"provider={user['llm_provider']} task={task_id}"
+        f"[solve] user={newton_user_id} type={req.task_type} url={req.url}"
     )
 
-    # ── 5. Run solver ──────────────────────────────────────────────────────
+    # ── 4. Run Groq solver ─────────────────────────────────────────────────────
     solve_result = None
     run_error: str | None = None
 
     try:
         solve_result = await solver_svc.solve(
-            provider=user["llm_provider"],
-            api_key=llm_api_key,
+            provider="groq",
+            api_key=req.groq_api_key,
             task_type=req.task_type,
             question=req.question,
             options=req.options,
@@ -130,44 +108,24 @@ async def solve_endpoint(req: SolveRequest):
         )
     except Exception as exc:
         run_error = str(exc)
-        logger.error(f"[solve] Solver failed for task {task_id}: {exc}")
+        logger.error(f"[solve] Solver failed for {newton_user_id}: {exc}")
 
-    # ── 6. Persist run record ──────────────────────────────────────────────
-    if task_id:
-        run_row: dict = {
-            "task_id":       task_id,
-            "user_id":       user["id"],
-            "attempt":       (solve_result.attempts if solve_result else 1),
-            "prompt":        (solve_result.prompt if solve_result else ""),
-            "response":      (solve_result.answer if solve_result else None),
-            "success":       solve_result is not None,
-            "error_message": run_error,
-            "tokens_used":   (solve_result.tokens_used if solve_result else None),
-            "duration_ms":   (solve_result.duration_ms if solve_result else None),
-        }
-        try:
-            supabase.table("runs").insert(run_row).execute()
-        except Exception as exc:
-            logger.warning(f"[solve] Run insert failed (non-fatal): {exc}")
+    # ── 5. Log to usage_logs ───────────────────────────────────────────────────
+    try:
+        supabase.table("usage_logs").insert({
+            "newton_user_id": newton_user_id,
+            "task_type":      req.task_type,
+            "page_url":       req.url,
+            "success":        solve_result is not None,
+        }).execute()
+    except Exception as exc:
+        logger.warning(f"[solve] usage_logs insert failed (non-fatal): {exc}")
 
-    # ── 7. Update task status ──────────────────────────────────────────────
-    if task_id:
-        update = {
-            "status":      "solved" if solve_result else "failed",
-            "completed_at": _now_iso(),
-        }
-        if run_error and not solve_result:
-            update["error_message"] = run_error[:500]
-        try:
-            supabase.table("tasks").update(update).eq("id", task_id).execute()
-        except Exception as exc:
-            logger.warning(f"[solve] Task status update failed (non-fatal): {exc}")
-
-    # ── 8. Return ──────────────────────────────────────────────────────────
+    # ── 6. Return ──────────────────────────────────────────────────────────────
     if not solve_result:
         raise HTTPException(
             status_code=502,
             detail=f"Solver failed: {run_error or 'unknown error'}",
         )
 
-    return SolveResponse(answer=solve_result.answer, task_id=task_id)
+    return SolveResponse(answer=solve_result.answer)

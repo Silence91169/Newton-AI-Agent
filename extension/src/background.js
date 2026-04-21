@@ -1,21 +1,21 @@
 // Newton AI Agent — Background Service Worker (MV3)
 'use strict';
 
-const DEFAULT_BACKEND = 'http://localhost:8000';
+const BACKEND_URL = 'http://localhost:8000';
 
-// ── Defaults ──────────────────────────────────────────────────────────────────
+// ── Settings ──────────────────────────────────────────────────────────────────
 async function getSettings() {
   return chrome.storage.sync.get({
-    api_token: '',
-    backend_url: DEFAULT_BACKEND,
-    enabled: true,
+    groq_api_key: '',
+    newton_user:  null,
+    enabled:      true,
   });
 }
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
 async function refreshBadge() {
-  const { enabled, api_token } = await getSettings();
-  if (!api_token) {
+  const { enabled, groq_api_key } = await getSettings();
+  if (!groq_api_key) {
     chrome.action.setBadgeBackgroundColor({ color: '#f38ba8' });
     chrome.action.setBadgeText({ text: '!' });
     return;
@@ -30,12 +30,11 @@ async function refreshBadge() {
 }
 
 // ── Backend call ──────────────────────────────────────────────────────────────
-async function callBackend(path, method, body, extraHeaders = {}) {
-  const { backend_url } = await getSettings();
-  const url = `${backend_url}${path}`;
+async function callBackend(path, method, body) {
+  const url = `${BACKEND_URL}${path}`;
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...extraHeaders },
+    headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -47,33 +46,21 @@ async function callBackend(path, method, body, extraHeaders = {}) {
 
 // ── Solve request ─────────────────────────────────────────────────────────────
 async function handleSolve(payload) {
-  const { api_token } = await getSettings();
-  if (!api_token) {
-    return { error: 'No API token set. Open extension options and paste your token.' };
+  const { groq_api_key, newton_user } = await getSettings();
+
+  if (!groq_api_key) {
+    return { error: 'No Groq API key set. Open extension settings and paste your key.' };
   }
+
   try {
-    const data = await callBackend('/solve', 'POST', { api_token, ...payload });
+    const data = await callBackend('/solve', 'POST', {
+      groq_api_key,
+      newton_user,
+      ...payload,
+    });
     return data;
   } catch (err) {
     return { error: err.message };
-  }
-}
-
-// ── Connection test ───────────────────────────────────────────────────────────
-async function testConnection(api_token, backend_url) {
-  const url = `${backend_url || DEFAULT_BACKEND}/auth/verify`;
-  try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${api_token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return { ok: true, user: data };
-    }
-    const err = await res.json().catch(() => ({}));
-    return { ok: false, error: err?.detail || `HTTP ${res.status}` };
-  } catch (err) {
-    return { ok: false, error: err.message };
   }
 }
 
@@ -109,7 +96,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
         case 'LOG_ACTIVITY':
           await chrome.storage.local.set({
-            lastActivity: msg.text,
+            lastActivity:     msg.text,
             lastActivityTime: Date.now(),
           });
           sendResponse({ ok: true });
@@ -124,17 +111,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
         case 'GET_STATS': {
           const local = await chrome.storage.local.get({
-            solvedToday: 0,
-            lastActivity: '',
+            solvedToday:      0,
+            lastActivity:     '',
             lastActivityTime: 0,
           });
           sendResponse(local);
           break;
         }
-
-        case 'TEST_CONNECTION':
-          sendResponse(await testConnection(msg.api_token, msg.backend_url));
-          break;
 
         default:
           sendResponse({ error: `Unknown message type: ${msg.type}` });
@@ -156,7 +139,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // ── Startup / install ─────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(async () => {
   await refreshBadge();
-  // Reset solved counter at midnight every day
   chrome.alarms.create('daily_reset', { periodInMinutes: 1440 });
 });
 

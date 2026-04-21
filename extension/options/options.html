@@ -21,24 +21,40 @@
 
     <main>
 
-      <!-- API Token -->
+      <!-- Newton Account (auto-detected) -->
       <section class="card">
-        <div class="card-title">Backend API Token</div>
+        <div class="card-title">Newton Account</div>
         <p class="card-desc">
-          Your personal token from the Newton AI Agent dashboard.
-          <a href="#" id="link-dashboard" class="link">Get token →</a>
+          Detected automatically when you browse the Newton portal.
+          If not shown, visit
+          <a href="https://my.newtonschool.co" target="_blank" class="link">my.newtonschool.co</a>
+          and log in.
+        </p>
+        <div id="account-status" class="account-status account-unknown">
+          <span id="account-dot" class="account-dot"></span>
+          <span id="account-label">Checking…</span>
+        </div>
+      </section>
+
+      <!-- Groq API Key -->
+      <section class="card">
+        <div class="card-title">Groq API Key</div>
+        <p class="card-desc">
+          Your Groq API key — get one free at
+          <a href="https://console.groq.com/keys" target="_blank" class="link">console.groq.com/keys</a>.
+          It is stored locally in your browser and sent only to your backend.
         </p>
         <div class="field">
-          <label for="inp-token">API Token</label>
+          <label for="inp-groq-key">API Key</label>
           <div class="input-row">
             <input
               type="password"
-              id="inp-token"
-              placeholder="naa_xxxxxxxxxxxxxxxx"
+              id="inp-groq-key"
+              placeholder="gsk_xxxxxxxxxxxxxxxx"
               autocomplete="off"
               spellcheck="false"
             />
-            <button class="btn-icon" id="btn-show-token" title="Show/hide">
+            <button class="btn-icon" id="btn-show-key" title="Show/hide">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/>
@@ -49,49 +65,12 @@
         </div>
       </section>
 
-      <!-- Backend URL -->
-      <section class="card">
-        <div class="card-title">Backend Server</div>
-        <p class="card-desc">URL of the Newton AI Agent backend API server.</p>
-        <div class="field">
-          <label for="inp-url">Backend URL</label>
-          <input
-            type="url"
-            id="inp-url"
-            placeholder="http://localhost:8000"
-            autocomplete="off"
-          />
-        </div>
-      </section>
-
-      <!-- Connection test -->
-      <section class="card">
-        <div class="card-title">Connection</div>
-        <p class="card-desc">Test that the extension can reach the backend with your token.</p>
-        <div class="test-row">
-          <button class="btn-secondary" id="btn-test">Test Connection</button>
-          <span id="test-result" class="test-result"></span>
-        </div>
-      </section>
-
-      <!-- Info -->
-      <section class="card info-card">
-        <div class="card-title">How it works</div>
-        <ol class="info-list">
-          <li>Register on the dashboard and copy your API token.</li>
-          <li>Paste it above and save.</li>
-          <li>Browse to any Newton School assessment or coding challenge.</li>
-          <li>The agent solves and submits automatically.</li>
-        </ol>
-      </section>
-
       <!-- Toast / status -->
       <div id="toast" class="toast hidden"></div>
 
       <!-- Actions -->
       <div class="actions">
-        <button class="btn-primary" id="btn-save">Save Settings</button>
-        <button class="btn-ghost" id="btn-reset">Reset to Default</button>
+        <button class="btn-primary" id="btn-save">Save</button>
       </div>
 
     </main>

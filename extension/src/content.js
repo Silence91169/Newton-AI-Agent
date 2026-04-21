@@ -107,6 +107,14 @@ document.addEventListener('naa_auth_captured', (e) => {
   }
 });
 
+// ── Newton user identity — decoded from JWT by auth_bridge.js (MAIN world) ───
+document.addEventListener('naa_user_captured', (e) => {
+  const user = e.detail;
+  if (user && (user.id || user.email)) {
+    chrome.storage.sync.set({ newton_user: user }).catch(() => {});
+  }
+});
+
 // ── Monaco editor index — received from page_bridge.js (MAIN world) ──────────
 document.addEventListener('naa_editor_found', (e) => {
   if (typeof e.detail?.idx === 'number') {
