@@ -8,6 +8,10 @@
 --   DROP TABLE IF EXISTS tasks    CASCADE;
 --   DROP TABLE IF EXISTS sessions CASCADE;
 --   DROP TABLE IF EXISTS users    CASCADE;
+--
+-- If upgrading from the groq-only schema, run:
+--   ALTER TABLE users RENAME COLUMN groq_api_key_enc TO api_key_enc;
+--   ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_provider TEXT NOT NULL DEFAULT 'groq';
 
 -- ── Extensions ────────────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -18,13 +22,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- (sub / user_id / id claim). Falls back to sha256 prefix of the Groq key.
 
 CREATE TABLE IF NOT EXISTS users (
-  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  newton_user_id   TEXT        NOT NULL UNIQUE,  -- stable identifier from Newton JWT
-  email            TEXT,
-  username         TEXT,
-  groq_api_key_enc TEXT        NOT NULL,         -- AES-256-GCM encrypted, base64url
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  last_seen        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  newton_user_id TEXT        NOT NULL UNIQUE,  -- stable identifier from Newton JWT
+  email          TEXT,
+  username       TEXT,
+  api_key_enc    TEXT        NOT NULL,         -- AES-256-GCM encrypted, base64url
+  llm_provider   TEXT        NOT NULL DEFAULT 'groq'
+                             CHECK (llm_provider IN ('groq','openai','anthropic','gemini','nvidia')),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ── usage_logs ────────────────────────────────────────────────────────────────

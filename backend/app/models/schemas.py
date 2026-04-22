@@ -17,7 +17,8 @@ class NewtonUser(BaseModel):
 # ── Solve ─────────────────────────────────────────────────────────────────────
 
 class SolveRequest(BaseModel):
-    groq_api_key: str
+    llm_api_key:  str
+    llm_provider: str = "groq"                 # groq | openai | anthropic | gemini | nvidia
     newton_user:  Optional[NewtonUser] = None
     task_type:    str                          # mcq | coding | assignment
     question:     str

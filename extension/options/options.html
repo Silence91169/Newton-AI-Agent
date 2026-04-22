@@ -36,20 +36,35 @@
         </div>
       </section>
 
-      <!-- Groq API Key -->
+      <!-- LLM Provider -->
       <section class="card">
-        <div class="card-title">Groq API Key</div>
+        <div class="card-title">LLM Provider</div>
+        <p class="card-desc">Choose which AI model to use for solving tasks.</p>
+        <div class="field">
+          <label for="sel-provider">Provider</label>
+          <select id="sel-provider">
+            <option value="groq">Groq — llama-3.3-70b-versatile (free, fast)</option>
+            <option value="openai">OpenAI — gpt-4o</option>
+            <option value="anthropic">Anthropic — claude-opus-4-5</option>
+            <option value="gemini">Google — gemini-2.0-flash</option>
+            <option value="nvidia">NVIDIA NIM — meta/llama-3.3-70b-instruct</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- API Key -->
+      <section class="card">
+        <div class="card-title">API Key</div>
         <p class="card-desc">
-          Your Groq API key — get one free at
-          <a href="https://console.groq.com/keys" target="_blank" class="link">console.groq.com/keys</a>.
-          It is stored locally in your browser and sent only to your backend.
+          <span id="key-desc">Get your key at </span><a href="#" target="_blank" id="key-link" class="link">console.groq.com/keys</a>.
+          Stored locally in your browser and sent only to your backend.
         </p>
         <div class="field">
-          <label for="inp-groq-key">API Key</label>
+          <label for="inp-api-key">API Key</label>
           <div class="input-row">
             <input
               type="password"
-              id="inp-groq-key"
+              id="inp-api-key"
               placeholder="gsk_xxxxxxxxxxxxxxxx"
               autocomplete="off"
               spellcheck="false"

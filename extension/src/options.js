@@ -3,6 +3,35 @@
 
 const $ = (id) => document.getElementById(id);
 
+// ── Provider config ───────────────────────────────────────────────────────────
+const PROVIDERS = {
+  groq: {
+    placeholder: 'gsk_xxxxxxxxxxxxxxxx',
+    linkHref:    'https://console.groq.com/keys',
+    linkText:    'console.groq.com/keys',
+  },
+  openai: {
+    placeholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
+    linkHref:    'https://platform.openai.com/api-keys',
+    linkText:    'platform.openai.com/api-keys',
+  },
+  anthropic: {
+    placeholder: 'sk-ant-xxxxxxxxxxxxxxxx',
+    linkHref:    'https://console.anthropic.com/settings/keys',
+    linkText:    'console.anthropic.com/settings/keys',
+  },
+  gemini: {
+    placeholder: 'AIzaxxxxxxxxxxxxxxxx',
+    linkHref:    'https://aistudio.google.com/app/apikey',
+    linkText:    'aistudio.google.com/app/apikey',
+  },
+  nvidia: {
+    placeholder: 'nvapi-xxxxxxxxxxxxxxxx',
+    linkHref:    'https://build.nvidia.com/explore/discover',
+    linkText:    'build.nvidia.com',
+  },
+};
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 let toastTimer = null;
 function showToast(msg, type = 'success') {
@@ -11,6 +40,14 @@ function showToast(msg, type = 'success') {
   el.className = `toast ${type}`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.className = 'toast hidden'; }, 3000);
+}
+
+// ── Update key field when provider changes ────────────────────────────────────
+function applyProvider(provider) {
+  const cfg = PROVIDERS[provider] || PROVIDERS.groq;
+  $('inp-api-key').placeholder = cfg.placeholder;
+  $('key-link').href           = cfg.linkHref;
+  $('key-link').textContent    = cfg.linkText;
 }
 
 // ── Newton account display ────────────────────────────────────────────────────
@@ -31,23 +68,26 @@ function renderAccount(newton_user) {
 
 // ── Load settings from storage ────────────────────────────────────────────────
 async function load() {
-  const { groq_api_key = '', newton_user = null } =
-    await chrome.storage.sync.get({ groq_api_key: '', newton_user: null });
+  const { llm_api_key = '', llm_provider = 'groq', newton_user = null } =
+    await chrome.storage.sync.get({
+      llm_api_key:  '',
+      llm_provider: 'groq',
+      newton_user:  null,
+    });
 
-  $('inp-groq-key').value = groq_api_key;
+  $('sel-provider').value = llm_provider;
+  $('inp-api-key').value  = llm_api_key;
+  applyProvider(llm_provider);
   renderAccount(newton_user);
 }
 
 // ── Save settings ─────────────────────────────────────────────────────────────
 async function save() {
-  const key = $('inp-groq-key').value.trim();
+  const provider = $('sel-provider').value;
+  const key      = $('inp-api-key').value.trim();
 
   if (!key) {
-    showToast('Groq API key cannot be empty', 'error');
-    return;
-  }
-  if (!key.startsWith('gsk_')) {
-    showToast('Key should start with gsk_ — check your Groq console', 'error');
+    showToast('API key cannot be empty', 'error');
     return;
   }
 
@@ -57,7 +97,7 @@ async function save() {
 
   await chrome.runtime.sendMessage({
     type:    'SAVE_SETTINGS',
-    payload: { groq_api_key: key },
+    payload: { llm_api_key: key, llm_provider: provider },
   });
 
   btn.disabled = false;
@@ -67,7 +107,7 @@ async function save() {
 
 // ── Toggle key visibility ─────────────────────────────────────────────────────
 function toggleKeyVisibility() {
-  const inp = $('inp-groq-key');
+  const inp = $('inp-api-key');
   inp.type = inp.type === 'password' ? 'text' : 'password';
 }
 
@@ -75,10 +115,8 @@ function toggleKeyVisibility() {
 document.addEventListener('DOMContentLoaded', async () => {
   await load();
 
+  $('sel-provider').addEventListener('change', (e) => applyProvider(e.target.value));
   $('btn-save').addEventListener('click', save);
   $('btn-show-key').addEventListener('click', toggleKeyVisibility);
-
-  $('inp-groq-key').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') save();
-  });
+  $('inp-api-key').addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
 });

@@ -2,13 +2,13 @@
 Newton AI Agent — Solve endpoint.
 
 POST /solve
-  Body: { groq_api_key, newton_user, task_type, question, ... }
+  Body: { llm_api_key, llm_provider, newton_user, task_type, question, ... }
 
 Flow:
-  1. Validate groq_api_key is present
+  1. Validate llm_api_key and llm_provider
   2. Derive a stable newton_user_id from newton_user (or fallback to key hash)
   3. Upsert user in Supabase (auto-register on first request)
-  4. Run the Groq solver
+  4. Run the solver
   5. Log to usage_logs
   6. Return the answer
 """
@@ -29,6 +29,8 @@ router = APIRouter(tags=["solve"])
 
 UTC = timezone.utc
 
+VALID_PROVIDERS = {"groq", "openai", "anthropic", "gemini", "nvidia"}
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -37,15 +39,14 @@ def _now_iso() -> str:
 def _derive_user_id(req: SolveRequest) -> str:
     """
     Return a stable string identifier for the Newton user.
-    Priority: JWT id → email → sha256 of first 16 chars of groq key (last resort).
+    Priority: JWT id → email → sha256 prefix of the API key (last resort).
     """
     if req.newton_user:
         if req.newton_user.id:
             return req.newton_user.id
         if req.newton_user.email:
             return req.newton_user.email
-    # Fallback: hash a prefix of the key so we can still track usage
-    return "key:" + hashlib.sha256(req.groq_api_key[:16].encode()).hexdigest()[:16]
+    return "key:" + hashlib.sha256(req.llm_api_key[:16].encode()).hexdigest()[:16]
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
@@ -53,8 +54,15 @@ def _derive_user_id(req: SolveRequest) -> str:
 @router.post("/solve", response_model=SolveResponse)
 async def solve_endpoint(req: SolveRequest):
     # ── 1. Validate ────────────────────────────────────────────────────────────
-    if not req.groq_api_key:
-        raise HTTPException(status_code=400, detail="groq_api_key is required")
+    if not req.llm_api_key:
+        raise HTTPException(status_code=400, detail="llm_api_key is required")
+
+    provider = req.llm_provider.lower()
+    if provider not in VALID_PROVIDERS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"llm_provider must be one of: {', '.join(sorted(VALID_PROVIDERS))}",
+        )
 
     if req.task_type not in ("mcq", "coding", "assignment"):
         raise HTTPException(
@@ -73,30 +81,31 @@ async def solve_endpoint(req: SolveRequest):
     try:
         supabase.table("users").upsert(
             {
-                "newton_user_id":   newton_user_id,
-                "email":            email,
-                "username":         username,
-                "groq_api_key_enc": encrypt(req.groq_api_key),
-                "last_seen":        _now_iso(),
+                "newton_user_id": newton_user_id,
+                "email":          email,
+                "username":       username,
+                "api_key_enc":    encrypt(req.llm_api_key),
+                "llm_provider":   provider,
+                "last_seen":      _now_iso(),
             },
             on_conflict="newton_user_id",
         ).execute()
     except Exception as exc:
-        # Non-fatal — we log and continue so a DB hiccup never blocks a solve
         logger.warning(f"[solve] User upsert failed (non-fatal): {exc}")
 
     logger.info(
-        f"[solve] user={newton_user_id} type={req.task_type} url={req.url}"
+        f"[solve] user={newton_user_id} provider={provider} "
+        f"type={req.task_type} url={req.url}"
     )
 
-    # ── 4. Run Groq solver ─────────────────────────────────────────────────────
+    # ── 4. Run solver ──────────────────────────────────────────────────────────
     solve_result = None
     run_error: str | None = None
 
     try:
         solve_result = await solver_svc.solve(
-            provider="groq",
-            api_key=req.groq_api_key,
+            provider=provider,
+            api_key=req.llm_api_key,
             task_type=req.task_type,
             question=req.question,
             options=req.options,

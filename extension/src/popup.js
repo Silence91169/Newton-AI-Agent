@@ -25,9 +25,9 @@ function classifyCurrentTab(url) {
   return { label: 'Not on Newton', dot: '#6b7280' };
 }
 
-function refreshConnectionBadge(groq_api_key, newton_user) {
+function refreshConnectionBadge(llm_api_key, newton_user) {
   const badge = $('conn-badge');
-  if (!groq_api_key) {
+  if (!llm_api_key) {
     badge.textContent = 'No Groq key';
     badge.className = 'badge badge-error';
     return;
@@ -67,7 +67,7 @@ async function render() {
   $('page-dot').style.background = dot;
 
   // Connection badge
-  refreshConnectionBadge(settings.groq_api_key, settings.newton_user);
+  refreshConnectionBadge(settings.llm_api_key, settings.newton_user);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

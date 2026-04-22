@@ -6,7 +6,8 @@ const BACKEND_URL = 'https://newton-ai-agent.onrender.com';
 // ── Settings ──────────────────────────────────────────────────────────────────
 async function getSettings() {
   return chrome.storage.sync.get({
-    groq_api_key: '',
+    llm_api_key:  '',
+    llm_provider: 'groq',
     newton_user:  null,
     enabled:      true,
   });
@@ -14,8 +15,8 @@ async function getSettings() {
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
 async function refreshBadge() {
-  const { enabled, groq_api_key } = await getSettings();
-  if (!groq_api_key) {
+  const { enabled, llm_api_key } = await getSettings();
+  if (!llm_api_key) {
     chrome.action.setBadgeBackgroundColor({ color: '#f38ba8' });
     chrome.action.setBadgeText({ text: '!' });
     return;
@@ -46,15 +47,16 @@ async function callBackend(path, method, body) {
 
 // ── Solve request ─────────────────────────────────────────────────────────────
 async function handleSolve(payload) {
-  const { groq_api_key, newton_user } = await getSettings();
+  const { llm_api_key, llm_provider, newton_user } = await getSettings();
 
-  if (!groq_api_key) {
-    return { error: 'No Groq API key set. Open extension settings and paste your key.' };
+  if (!llm_api_key) {
+    return { error: 'No API key set. Open extension settings and paste your key.' };
   }
 
   try {
     const data = await callBackend('/solve', 'POST', {
-      groq_api_key,
+      llm_api_key,
+      llm_provider,
       newton_user,
       ...payload,
     });

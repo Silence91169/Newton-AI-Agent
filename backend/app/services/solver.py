@@ -1,9 +1,15 @@
 """
 Newton AI Agent — Provider-agnostic LLM solver.
 
-Supports Anthropic (Claude), OpenAI (GPT-4o), and Google (Gemini).
-The caller passes the provider name and the decrypted API key; this module
-handles prompt construction, provider dispatch, response validation, and retry.
+Supported providers and their API style:
+  groq      — OpenAI-compatible  (https://api.groq.com/openai/v1)
+  openai    — OpenAI-compatible  (https://api.openai.com/v1)
+  gemini    — OpenAI-compatible  (https://generativelanguage.googleapis.com/v1beta/openai)
+  nvidia    — OpenAI-compatible  (https://integrate.api.nvidia.com/v1)
+  anthropic — Anthropic SDK      (messages API)
+
+The caller passes the provider name and API key; this module handles prompt
+construction, provider dispatch, response validation, and retry.
 """
 from __future__ import annotations
 
@@ -17,13 +23,22 @@ from loguru import logger
 
 # ── Models used per provider ──────────────────────────────────────────────────
 _MODELS: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-6",
-    "openai":    "gpt-4o",
-    "gemini":    "gemini-2.0-flash",
     "groq":      "llama-3.3-70b-versatile",
+    "openai":    "gpt-4o",
+    "anthropic": "claude-opus-4-5",
+    "gemini":    "gemini-2.0-flash",
+    "nvidia":    "meta/llama-3.3-70b-instruct",
 }
 
-MAX_TOKENS = 4096
+# Base URLs for OpenAI-compatible providers (None = use the default OpenAI URL)
+_OPENAI_COMPAT_BASE: dict[str, Optional[str]] = {
+    "groq":   "https://api.groq.com/openai/v1",
+    "openai": None,
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+}
+
+MAX_TOKENS  = 4096
 TEMPERATURE = 0.0   # deterministic answers
 MAX_RETRIES = 3
 
@@ -155,25 +170,18 @@ def _build_assignment_prompt(
 # ── Response validators ───────────────────────────────────────────────────────
 
 def _validate_mcq(raw: str, num_options: int) -> str:
-    """Extract the last valid option index from the model response.
-
-    The prompt asks the model to reason first and put the final digit on the
-    last line, so we scan from the end of the response to find it.
-    """
     raw = raw.strip()
 
-    # Walk digits from the end — the answer digit comes after the reasoning
     for ch in reversed(raw):
         if ch.isdigit():
             idx = int(ch)
             if 0 <= idx < num_options:
                 return str(idx)
 
-    # Fallback: last A-D letter, then last bare digit anywhere
     for pat in [r"\b([A-D])\b", r"\b(\d)\b"]:
         matches = re.findall(pat, raw, re.IGNORECASE)
         if matches:
-            token = matches[-1]  # take the last match
+            token = matches[-1]
             idx = int(token) if token.isdigit() else ord(token.upper()) - ord('A')
             if 0 <= idx < num_options:
                 return str(idx)
@@ -182,14 +190,11 @@ def _validate_mcq(raw: str, num_options: int) -> str:
 
 
 def _validate_coding(raw: str) -> str:
-    """Strip markdown fences if the model wrapped the code."""
     raw = raw.strip()
-    # Remove ```lang ... ``` or ``` ... ```
     fence_re = re.compile(r"^```[a-zA-Z0-9+#]*\n(.*?)```\s*$", re.DOTALL)
     m = fence_re.match(raw)
     if m:
         return m.group(1).strip()
-    # Remove single trailing ``` if present
     raw = re.sub(r"```\s*$", "", raw).strip()
     raw = re.sub(r"^```[a-zA-Z0-9+#]*\n?", "", raw).strip()
     return raw
@@ -201,8 +206,33 @@ def _validate_assignment(raw: str) -> str:
 
 # ── Provider implementations ──────────────────────────────────────────────────
 
+async def _call_openai_compat(
+    provider: str, api_key: str, prompt: str
+) -> tuple[str, Optional[int]]:
+    """
+    Single implementation for all OpenAI-compatible endpoints:
+    groq, openai, gemini (via OpenAI compat layer), nvidia.
+    """
+    import openai  # lazy import
+
+    base_url = _OPENAI_COMPAT_BASE[provider]
+    client = openai.AsyncOpenAI(
+        api_key=api_key,
+        **({"base_url": base_url} if base_url else {}),
+    )
+    resp = await client.chat.completions.create(
+        model=_MODELS[provider],
+        temperature=TEMPERATURE,
+        max_tokens=MAX_TOKENS,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text   = resp.choices[0].message.content or ""
+    tokens = resp.usage.total_tokens if resp.usage else None
+    return text, tokens
+
+
 async def _call_anthropic(api_key: str, prompt: str) -> tuple[str, Optional[int]]:
-    import anthropic  # lazy import — not installed on all envs
+    import anthropic  # lazy import
 
     client = anthropic.AsyncAnthropic(api_key=api_key)
     msg = await client.messages.create(
@@ -210,68 +240,22 @@ async def _call_anthropic(api_key: str, prompt: str) -> tuple[str, Optional[int]
         max_tokens=MAX_TOKENS,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = msg.content[0].text if msg.content else ""
+    text   = msg.content[0].text if msg.content else ""
     tokens = (msg.usage.input_tokens or 0) + (msg.usage.output_tokens or 0)
     return text, tokens
 
 
-async def _call_openai(api_key: str, prompt: str) -> tuple[str, Optional[int]]:
-    import openai  # lazy import
+# ── Dispatch table ────────────────────────────────────────────────────────────
 
-    client = openai.AsyncOpenAI(api_key=api_key)
-    resp = await client.chat.completions.create(
-        model=_MODELS["openai"],
-        temperature=TEMPERATURE,
-        max_tokens=MAX_TOKENS,
-        messages=[{"role": "user", "content": prompt}],
+async def _dispatch(provider: str, api_key: str, prompt: str) -> tuple[str, Optional[int]]:
+    if provider == "anthropic":
+        return await _call_anthropic(api_key, prompt)
+    if provider in _OPENAI_COMPAT_BASE:
+        return await _call_openai_compat(provider, api_key, prompt)
+    raise ValueError(
+        f"Unknown provider: {provider!r}. "
+        f"Use one of: {', '.join(sorted(_MODELS))}"
     )
-    text = resp.choices[0].message.content or ""
-    tokens = resp.usage.total_tokens if resp.usage else None
-    return text, tokens
-
-
-async def _call_groq(api_key: str, prompt: str) -> tuple[str, Optional[int]]:
-    import openai  # Groq is OpenAI-compatible — reuse the AsyncOpenAI client
-
-    client = openai.AsyncOpenAI(
-        api_key=api_key,
-        base_url="https://api.groq.com/openai/v1",
-    )
-    resp = await client.chat.completions.create(
-        model=_MODELS["groq"],
-        temperature=TEMPERATURE,
-        max_tokens=MAX_TOKENS,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text = resp.choices[0].message.content or ""
-    tokens = resp.usage.total_tokens if resp.usage else None
-    return text, tokens
-
-
-async def _call_gemini(api_key: str, prompt: str) -> tuple[str, Optional[int]]:
-    import google.generativeai as genai  # lazy import
-
-    def _sync():
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            _MODELS["gemini"],
-            generation_config=genai.types.GenerationConfig(
-                temperature=TEMPERATURE,
-                max_output_tokens=MAX_TOKENS,
-            ),
-        )
-        resp = model.generate_content(prompt)
-        return resp.text, None  # Gemini SDK doesn't expose token counts easily
-
-    return await asyncio.to_thread(_sync)
-
-
-_PROVIDER_DISPATCH = {
-    "anthropic": _call_anthropic,
-    "openai":    _call_openai,
-    "gemini":    _call_gemini,
-    "groq":      _call_groq,
-}
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -296,10 +280,12 @@ async def solve(
     Retries up to MAX_RETRIES times on validation or network errors.
     """
     provider = provider.lower()
-    if provider not in _PROVIDER_DISPATCH:
-        raise ValueError(f"Unknown LLM provider: {provider!r}. Use anthropic/openai/gemini/groq.")
+    if provider not in _MODELS:
+        raise ValueError(
+            f"Unknown provider: {provider!r}. "
+            f"Use one of: {', '.join(sorted(_MODELS))}"
+        )
 
-    # Build prompt once (error_context is passed in; caller rebuilds if retrying)
     if task_type == "mcq":
         if not options:
             raise ValueError("options is required for MCQ tasks")
@@ -314,16 +300,14 @@ async def solve(
     else:
         raise ValueError(f"Unknown task_type: {task_type!r}. Use mcq/coding/assignment.")
 
-    call_fn = _PROVIDER_DISPATCH[provider]
     errors: list[str] = []
 
     for attempt in range(1, MAX_RETRIES + 1):
         t0 = time.monotonic()
         try:
-            raw, tokens = await call_fn(api_key, prompt)
+            raw, tokens = await _dispatch(provider, api_key, prompt)
             duration_ms = int((time.monotonic() - t0) * 1000)
 
-            # Validate & clean response
             if task_type == "mcq":
                 answer = _validate_mcq(raw, len(options))  # type: ignore[arg-type]
             elif task_type == "coding":
@@ -334,8 +318,8 @@ async def solve(
                 answer = _validate_assignment(raw)
 
             logger.info(
-                f"[solver] {provider} solved {task_type} in {duration_ms}ms "
-                f"(attempt {attempt}, tokens={tokens})"
+                f"[solver] {provider}/{_MODELS[provider]} solved {task_type} "
+                f"in {duration_ms}ms (attempt {attempt}, tokens={tokens})"
             )
             return SolveResult(
                 answer=answer,
@@ -360,5 +344,4 @@ async def solve(
                     f"Last error: {exc}"
                 ) from exc
 
-    # Unreachable, but satisfies type checkers
     raise RuntimeError("Solver loop exited unexpectedly")
