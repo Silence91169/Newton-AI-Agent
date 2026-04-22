@@ -1,7 +1,7 @@
 // Newton AI Agent — Background Service Worker (MV3)
 'use strict';
 
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = 'https://newton-ai-agent.onrender.com';
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 async function getSettings() {
