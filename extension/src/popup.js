@@ -81,5 +81,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusEl.style.color = enabled ? 'var(--green)' : 'var(--overlay0)';
   });
 
-  $('btn-options').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  $('btn-options').addEventListener('click', () => {
+    chrome.runtime.openOptionsPage();
+    window.close();
+  });
 });
