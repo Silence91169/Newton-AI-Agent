@@ -79,6 +79,15 @@ async function load() {
   $('inp-api-key').value  = llm_api_key;
   applyProvider(llm_provider);
   renderAccount(newton_user);
+
+  // If no key saved yet, draw attention to the input
+  if (!llm_api_key) {
+    const inp = $('inp-api-key');
+    inp.classList.add('inp-attention');
+    inp.focus();
+    // Stop the animation once the user starts typing
+    inp.addEventListener('input', () => inp.classList.remove('inp-attention'), { once: true });
+  }
 }
 
 // ── Save settings ─────────────────────────────────────────────────────────────

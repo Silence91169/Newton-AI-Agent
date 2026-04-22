@@ -224,3 +224,15 @@ input::placeholder { color: var(--overlay0); }
 /* ── Link ────────────────────────────────────────────────────────────────── */
 .link { color: var(--blue); text-decoration: none; }
 .link:hover { text-decoration: underline; }
+
+/* ── Attention pulse (empty API key on load) ─────────────────────────────── */
+@keyframes key-pulse {
+  0%,100% { border-color: var(--surface1); box-shadow: none; }
+  50%      { border-color: var(--blue);
+             box-shadow: 0 0 0 3px rgba(137,180,250,.25),
+                         0 0 12px rgba(137,180,250,.15); }
+}
+.inp-attention {
+  animation: key-pulse 1.4s ease-in-out infinite;
+  border-color: var(--blue) !important;
+}
