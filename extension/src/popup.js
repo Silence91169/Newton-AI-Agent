@@ -81,8 +81,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusEl.style.color = enabled ? 'var(--green)' : 'var(--overlay0)';
   });
 
-  $('btn-options').addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
+  $('btn-add-key').addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') });
     window.close();
   });
 });

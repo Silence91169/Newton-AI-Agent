@@ -161,22 +161,21 @@ h1 {
   flex-shrink: 0;
 }
 
-/* ── Footer ──────────────────────────────────────────────────────────────── */
-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
+/* ── Add API Key button ───────────────────────────────────────────────────── */
+.api-key-row {
+  padding: 4px 16px 14px;
 }
-.btn-ghost {
-  background: none;
-  border: 1px solid var(--surface1);
-  color: var(--subtext);
-  border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
+.btn-add-key {
+  width: 100%;
+  background: var(--lavender);
+  border: none;
+  border-radius: 8px;
+  color: var(--crust);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 0;
   cursor: pointer;
-  transition: border-color .2s, color .2s;
+  letter-spacing: .3px;
+  transition: opacity .2s;
 }
-.btn-ghost:hover { border-color: var(--blue); color: var(--blue); }
-.version { font-size: 11px; color: var(--overlay0); }
+.btn-add-key:hover { opacity: .85; }
